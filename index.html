@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600;700&display=swap" rel="stylesheet" />
   <meta http-equiv="Cache-Control" content="no-store" />
-  <link rel="stylesheet" href="styles.css?v=20261102e" />
+  <link rel="stylesheet" href="styles.css?v=20261103a" />
 </head>
 <body>
   <div class="bg-grid"></div>
@@ -74,8 +74,10 @@
         <h2>Banco de treino IBDO</h2>
         <p>Questões originais de treino, 4 alternativas, estilo IBDO. Não são oficiais. Toda errada vai ao caderno.</p>
       </div>
+      <div id="q-overview" class="q-overview"></div>
       <div class="filters" id="q-filters"></div>
       <div id="q-stats" class="q-stats"></div>
+      <p id="q-status" class="sr-status" role="status" aria-live="polite"></p>
       <div id="q-box"><article class="card"><h3>Carregando o banco…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
     </section>
 
@@ -241,6 +243,7 @@
         <h2>Onde está a vaga</h2>
         <p>30 questões · 3 horas · 4 alternativas · mínimo 40 pontos · meta 68–72. 1º desempate: específicas.</p>
       </div>
+      <div id="stats-live"></div>
       <div class="bars">
         <div class="bar-row">
           <div class="bar-meta"><span>Conhecimentos Específicos</span><b>40 pts</b></div>
@@ -455,7 +458,17 @@
       }
     };
   </script>
-  <script src="app.js?v=20261102e"></script>
-  <script src="dia.js?v=20261102e"></script>
+  <div id="q-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="q-modal-title">
+      <h3 id="q-modal-title">Confirmação</h3>
+      <p id="q-modal-body"></p>
+      <div class="q-nav">
+        <button type="button" class="btn" id="q-modal-cancel">Cancelar</button>
+        <button type="button" class="btn wipe" id="q-modal-ok">Confirmar redefinição</button>
+      </div>
+    </div>
+  </div>
+  <script src="app.js?v=20261103a"></script>
+  <script src="dia.js?v=20261103a"></script>
 </body>
 </html>
