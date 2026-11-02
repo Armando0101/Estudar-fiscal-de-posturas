@@ -347,6 +347,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
       if (btn.dataset.panel === "simulados" && typeof renderSimHome === "function") renderSimHome();
       if (btn.dataset.panel === "caderno" && typeof renderCaderno === "function") renderCaderno();
       if (btn.dataset.panel === "edital" && typeof renderEdital === "function") renderEdital();
+      if (btn.dataset.panel === "pesos" && typeof renderStatsLive === "function") renderStatsLive();
     } catch (err) {
       const panel = document.getElementById(btn.dataset.panel);
       if (panel) {
@@ -731,23 +732,278 @@ function loadAnswers() {
 }
 function saveAnswers(map) { lsSet(ansKey, JSON.stringify(map)); }
 
+const reviewKey = "tango-fiscal-review";
+function loadReview() {
+  try { return JSON.parse(lsGet(reviewKey) || "{}"); } catch { return {}; }
+}
+function saveReview(map) { lsSet(reviewKey, JSON.stringify(map)); }
+
 let qFilter = "all";
 let qIndex = 0;
 let qMode = "all";
 let qLevel = "all";
 let qTopic = "all";
 let qPick = null;
+let qSearch = "";
+let drill = null;
+
+function setQStatus(msg) {
+  const el = document.getElementById("q-status");
+  if (el) el.textContent = msg || "";
+}
 
 function bankList() {
   const ans = loadAnswers();
-  return BANK.filter((q) => {
-    if (qFilter !== "all" && q.disc !== qFilter) return false;
-    if (qMode === "open" && ans[q.id]) return false;
-    if (qMode === "wrong" && !(ans[q.id] && ans[q.id].ok === false)) return false;
-    if (qLevel !== "all" && (q.level || "média") !== qLevel) return false;
-    if (qTopic !== "all" && q.topic !== qTopic) return false;
+  const rev = loadReview();
+  const q = (qSearch || "").trim().toLowerCase();
+  const src = drill && drill.ids ? drill.ids.map((id) => BANK.find((x) => x.id === id)).filter(Boolean) : BANK;
+  return src.filter((item) => {
+    if (qFilter !== "all" && item.disc !== qFilter) return false;
+    if (qMode === "open" && ans[item.id]) return false;
+    if (qMode === "ok" && !(ans[item.id] && ans[item.id].ok === true)) return false;
+    if (qMode === "wrong" && !(ans[item.id] && ans[item.id].ok === false)) return false;
+    if (qMode === "review" && !rev[item.id]) return false;
+    if (qLevel !== "all" && (item.level || "média") !== qLevel) return false;
+    if (qTopic !== "all" && item.topic !== qTopic) return false;
+    if (q) {
+      const blob = [item.stem, item.topic, item.sub, item.art, item.disc, item.why].join(" ").toLowerCase();
+      if (blob.indexOf(q) < 0) return false;
+    }
     return true;
   });
+}
+
+function answerStats(pool) {
+  const ans = loadAnswers();
+  const list = pool || BANK;
+  const done = list.filter((x) => ans[x.id]);
+  const ok = done.filter((x) => ans[x.id].ok);
+  const bad = done.filter((x) => ans[x.id].ok === false);
+  const pct = done.length ? Math.round(ok.length * 100 / done.length) : 0;
+  return { total: list.length, done: done.length, ok: ok.length, bad: bad.length, open: list.length - done.length, pct };
+}
+
+function discStats() {
+  return ["Português", "Legislação", "Específicas"].map((d) => {
+    const s = answerStats(BANK.filter((q) => q.disc === d));
+    s.disc = d;
+    return s;
+  });
+}
+
+function topicStats(minN) {
+  const ans = loadAnswers();
+  const map = {};
+  BANK.forEach((q) => {
+    const rec = ans[q.id];
+    if (!rec) return;
+    const k = q.disc + " · " + q.topic;
+    map[k] = map[k] || { key: k, disc: q.disc, topic: q.topic, n: 0, ok: 0 };
+    map[k].n += 1;
+    if (rec.ok) map[k].ok += 1;
+  });
+  return Object.keys(map).map((k) => {
+    const x = map[k];
+    x.pct = Math.round(x.ok * 100 / x.n);
+    x.bad = x.n - x.ok;
+    return x;
+  }).filter((x) => x.n >= (minN || 1)).sort((a, b) => a.pct - b.pct || b.n - a.n);
+}
+
+function unansweredTopics() {
+  const ans = loadAnswers();
+  const seen = {};
+  BANK.forEach((q) => {
+    seen[q.topic] = seen[q.topic] || { topic: q.topic, disc: q.disc, n: 0, done: 0 };
+    seen[q.topic].n += 1;
+    if (ans[q.id]) seen[q.topic].done += 1;
+  });
+  return Object.keys(seen).map((k) => seen[k]).filter((t) => t.done === 0);
+}
+
+function resetQuestionMarks() {
+  saveAnswers({});
+  qIndex = 0;
+  qPick = null;
+  drill = null;
+}
+
+function confirmWipeAnswers() {
+  const n = Object.keys(loadAnswers()).length;
+  const modal = document.getElementById("q-modal");
+  const body = document.getElementById("q-modal-body");
+  const title = document.getElementById("q-modal-title");
+  if (!modal || !body) return;
+  title.textContent = "Redefinir marcações";
+  body.textContent = "Há " + n + " questão(ões) respondida(s) no banco. Você está prestes a redefinir as marcações do banco de questões. Essa ação apagará as respostas registradas e reiniciará as estatísticas de desempenho das questões. O caderno de erros, os simulados realizados, as marcações para revisão e o restante do seu progresso serão preservados. Deseja continuar?";
+  modal.hidden = false;
+  const cancel = document.getElementById("q-modal-cancel");
+  const ok = document.getElementById("q-modal-ok");
+  function close() { modal.hidden = true; cancel.removeEventListener("click", onCancel); ok.removeEventListener("click", onOk); }
+  function onCancel() { close(); setQStatus("Redefinição cancelada. Nada foi apagado."); }
+  function onOk() {
+    resetQuestionMarks();
+    close();
+    renderQuestoes();
+    if (typeof renderToday === "function") renderToday();
+    if (typeof renderStatsLive === "function") renderStatsLive();
+    setQStatus("Marcações do banco redefinidas. Caderno, simulados e revisão foram preservados.");
+  }
+  cancel.addEventListener("click", onCancel);
+  ok.addEventListener("click", onOk);
+}
+
+function paintQOverview() {
+  const el = document.getElementById("q-overview");
+  if (!el) return;
+  const g = answerStats();
+  const discs = discStats();
+  const topics = topicStats(2);
+  el.innerHTML = `
+    <div class="dash q-dash">
+      <div class="stat"><b>${g.total}</b><span>no banco</span></div>
+      <div class="stat"><b>${g.done}</b><span>respondidas</span></div>
+      <div class="stat"><b>${g.ok}</b><span>acertos</span></div>
+      <div class="stat"><b>${g.bad}</b><span>erros</span></div>
+      <div class="stat"><b>${g.pct}%</b><span>acerto (só respondidas)</span></div>
+      <div class="stat"><b>${g.open}</b><span>ainda abertas</span></div>
+    </div>
+    <div class="disc-bars">
+      ${discs.map((d) => `<div class="bar-row"><div class="bar-meta"><span>${d.disc}</span><b>${d.done ? d.pct + "%" : "—"} · ${d.ok}/${d.done || 0}</b></div><div class="bar"><i style="width:${d.done ? d.pct : 0}%"></i></div></div>`).join("")}
+    </div>
+    ${topics.length ? `<div class="topic-bars">${topics.slice(0, 6).map((t) => `<div class="bar-row"><div class="bar-meta"><span>${t.key}</span><b>${t.pct}% · ${t.ok}/${t.n}</b></div><div class="bar"><i style="width:${t.pct}%"></i></div></div>`).join("")}</div>` : ""}
+    <div class="q-toolbar">
+      <button type="button" class="btn wipe" id="btn-reset-answers">Redefinir marcações</button>
+      <button type="button" class="btn gold" id="btn-drill">Treino rápido</button>
+    </div>
+  `;
+  const rst = document.getElementById("btn-reset-answers");
+  if (rst) rst.addEventListener("click", confirmWipeAnswers);
+  const dr = document.getElementById("btn-drill");
+  if (dr) dr.addEventListener("click", openDrillSetup);
+}
+
+function openDrillSetup() {
+  const box = document.getElementById("q-box");
+  if (!box) return;
+  box.innerHTML = `
+    <article class="card">
+      <h3>Treino rápido</h3>
+      <p>Sessão curta, uma questão por vez. Prioriza abertas e erradas. Sem repetir item na mesma sessão. Gabarito só depois de confirmar.</p>
+      <p class="tree-meta">Quantas questões</p>
+      <div class="filters" id="drill-n">
+        ${[10, 15, 20].map((n, i) => `<button type="button" class="chip ${i === 0 ? "active" : ""}" data-dn="${n}">${n}</button>`).join("")}
+      </div>
+      <p class="tree-meta">Recorte</p>
+      <div class="filters" id="drill-src">
+        <button type="button" class="chip active" data-ds="all">Todas as disciplinas</button>
+        <button type="button" class="chip" data-ds="Português">Apenas Português</button>
+        <button type="button" class="chip" data-ds="Legislação">Apenas Legislação</button>
+        <button type="button" class="chip" data-ds="Específicas">Apenas Específicas</button>
+        <button type="button" class="chip" data-ds="wrong">Questões erradas</button>
+        <button type="button" class="chip" data-ds="open">Ainda não respondidas</button>
+        <button type="button" class="chip" data-ds="review">Marcadas para revisão</button>
+      </div>
+      <div class="q-nav">
+        <button type="button" class="btn gold" id="drill-go">Iniciar treino</button>
+        <button type="button" class="btn" id="drill-cancel">Voltar ao banco</button>
+      </div>
+    </article>
+  `;
+  let n = 10, src = "all";
+  box.querySelectorAll("[data-dn]").forEach((b) => b.addEventListener("click", () => {
+    box.querySelectorAll("[data-dn]").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    n = Number(b.dataset.dn);
+  }));
+  box.querySelectorAll("[data-ds]").forEach((b) => b.addEventListener("click", () => {
+    box.querySelectorAll("[data-ds]").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    src = b.dataset.ds;
+  }));
+  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; renderQuestoes(); });
+  document.getElementById("drill-go").addEventListener("click", () => startDrill(n, src));
+}
+
+function startDrill(n, src) {
+  const ans = loadAnswers();
+  const rev = loadReview();
+  let pool = BANK.slice();
+  if (src === "Português" || src === "Legislação" || src === "Específicas") pool = pool.filter((q) => q.disc === src);
+  if (src === "wrong") pool = pool.filter((q) => ans[q.id] && ans[q.id].ok === false);
+  if (src === "open") pool = pool.filter((q) => !ans[q.id]);
+  if (src === "review") pool = pool.filter((q) => rev[q.id]);
+  const open = [], wrong = [], rest = [];
+  pool.forEach((q) => {
+    if (!ans[q.id]) open.push(q);
+    else if (ans[q.id].ok === false) wrong.push(q);
+    else rest.push(q);
+  });
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  const ordered = shuffle(open).concat(shuffle(wrong), shuffle(rest));
+  const ids = [];
+  const seen = {};
+  ordered.forEach((q) => {
+    if (ids.length >= n) return;
+    if (seen[q.id]) return;
+    seen[q.id] = true;
+    ids.push(q.id);
+  });
+  if (!ids.length) {
+    setQStatus("Não há questões nesse recorte para montar o treino.");
+    return;
+  }
+  drill = { ids, i: 0, picks: {} };
+  qIndex = 0;
+  qPick = null;
+  renderQuestoes();
+}
+
+function finishDrill() {
+  const ans = loadAnswers();
+  const qs = drill.ids.map((id) => BANK.find((x) => x.id === id)).filter(Boolean);
+  const done = qs.filter((q) => ans[q.id]);
+  const ok = done.filter((q) => ans[q.id].ok);
+  const bad = done.filter((q) => ans[q.id].ok === false);
+  const pct = done.length ? Math.round(ok.length * 100 / done.length) : 0;
+  const by = {};
+  done.forEach((q) => {
+    by[q.disc] = by[q.disc] || { n: 0, ok: 0 };
+    by[q.disc].n += 1;
+    if (ans[q.id].ok) by[q.disc].ok += 1;
+  });
+  const weakMap = {};
+  bad.forEach((q) => {
+    weakMap[q.topic] = (weakMap[q.topic] || 0) + 1;
+  });
+  const weakTopics = Object.keys(weakMap).sort((a, b) => weakMap[b] - weakMap[a]);
+  const sug = weakTopics[0]
+    ? "Revise " + weakTopics[0] + " na próxima sessão, com recuperação ativa (questões, não só releitura)."
+    : (done.length ? "Nenhum erro nesta sessão. Intercale outra disciplina amanhã." : "Nenhuma questão confirmada nesta sessão.");
+  const box = document.getElementById("q-box");
+  box.innerHTML = `
+    <article class="card good">
+      <h3>Relatório do treino rápido</h3>
+      <p>Resolvidas: ${done.length} · Acertos: ${ok.length} · Erros: ${bad.length} · Aproveitamento: ${pct}%</p>
+      <ul>${Object.keys(by).map((d) => `<li><b>${d}:</b> ${by[d].ok}/${by[d].n} (${Math.round(by[d].ok * 100 / by[d].n)}%)</li>`).join("") || "<li>Sem respostas confirmadas.</li>"}</ul>
+      <p><b>Reforço:</b> ${weakTopics.length ? weakTopics.join(", ") : "nenhum assunto com erro nesta sessão"}.</p>
+      <p>${sug}</p>
+      <div class="q-nav">
+        <button type="button" class="btn gold" id="drill-again">Novo treino</button>
+        <button type="button" class="btn" id="drill-back">Voltar ao banco</button>
+      </div>
+    </article>
+  `;
+  drill = null;
+  document.getElementById("drill-again").addEventListener("click", openDrillSetup);
+  document.getElementById("drill-back").addEventListener("click", () => { renderQuestoes(); });
 }
 
 function renderQuestoes() {
@@ -755,17 +1011,23 @@ function renderQuestoes() {
   const stats = document.getElementById("q-stats");
   const filters = document.getElementById("q-filters");
   if (!box || !stats || !filters) return;
+  paintQOverview();
   const ans = loadAnswers();
+  const rev = loadReview();
   const discs = ["all", "Português", "Legislação", "Específicas"];
   const levels = ["all", "fácil", "média", "difícil"];
   const topics = ["all"].concat(Array.from(new Set(BANK.filter((q) => qFilter === "all" || q.disc === qFilter).map((q) => q.topic))).sort());
   if (qTopic !== "all" && topics.indexOf(qTopic) < 0) qTopic = "all";
+  const esc = (s) => String(s || "").replace(/"/g, "&quot;");
   filters.innerHTML = discs.map((d) => `<button type="button" class="chip ${qFilter === d ? "active" : ""}" data-qd="${d}">${d === "all" ? "Todas" : d}</button>`).join("") +
     levels.map((lv) => `<button type="button" class="chip ${qLevel === lv ? "active" : ""}" data-ql="${lv}">${lv === "all" ? "Qualquer nível" : lv}</button>`).join("") +
     `<button type="button" class="chip ${qMode === "all" ? "active" : ""}" data-qm="all">Todas as situações</button>` +
     `<button type="button" class="chip ${qMode === "open" ? "active" : ""}" data-qm="open">Não respondidas</button>` +
+    `<button type="button" class="chip ${qMode === "ok" ? "active" : ""}" data-qm="ok">Corretas</button>` +
     `<button type="button" class="chip ${qMode === "wrong" ? "active" : ""}" data-qm="wrong">Erradas</button>` +
-    `<label class="file-btn">Assunto <select id="q-topic">${topics.map((t) => `<option value="${t}" ${qTopic === t ? "selected" : ""}>${t === "all" ? "Todos os assuntos" : t}</option>`).join("")}</select></label>`;
+    `<button type="button" class="chip ${qMode === "review" ? "active" : ""}" data-qm="review">Para revisão</button>` +
+    `<label class="file-btn">Assunto <select id="q-topic">${topics.map((t) => `<option value="${t}" ${qTopic === t ? "selected" : ""}>${t === "all" ? "Todos os assuntos" : t}</option>`).join("")}</select></label>` +
+    `<label class="file-btn q-search-lab">Pesquisar <input type="search" id="q-search" value="${esc(qSearch)}" placeholder="enunciado, assunto ou artigo" /></label>`;
   filters.querySelectorAll("button[data-qd]").forEach((btn) => {
     btn.addEventListener("click", () => { qFilter = btn.dataset.qd; qIndex = 0; qPick = null; qTopic = "all"; renderQuestoes(); });
   });
@@ -777,11 +1039,58 @@ function renderQuestoes() {
   });
   const topicSel = document.getElementById("q-topic");
   if (topicSel) topicSel.addEventListener("change", () => { qTopic = topicSel.value; qIndex = 0; qPick = null; renderQuestoes(); });
+  const search = document.getElementById("q-search");
+  if (search) {
+    search.addEventListener("input", () => {
+      qSearch = search.value;
+      if (window._qSearchTimer) clearTimeout(window._qSearchTimer);
+      window._qSearchTimer = setTimeout(() => {
+        qIndex = 0;
+        qPick = null;
+        renderQuestoes();
+        const el = document.getElementById("q-search");
+        if (el) { el.focus(); const v = el.value; el.setSelectionRange(v.length, v.length); }
+      }, 220);
+    });
+  }
   const list = bankList();
-  const done = BANK.filter((q) => ans[q.id]).length;
-  const ok = BANK.filter((q) => ans[q.id] && ans[q.id].ok).length;
-  const pct = done ? Math.round(ok * 100 / done) : 0;
-  stats.innerHTML = `<span class="pill">Treino · não oficiais</span><span class="pill">${BANK.length} no banco</span><span class="pill">${done} respondidas</span><span class="pill">${ok} certas · ${pct}%</span><span class="pill">${list.length} neste filtro</span>`;
+  const g = answerStats();
+  stats.innerHTML = `<span class="pill">Treino · não oficiais</span><span class="pill">${g.total} no banco</span><span class="pill">${g.done} respondidas</span><span class="pill">${g.ok} certas · ${g.pct}%</span><span class="pill">${g.bad} erros</span><span class="pill">${list.length} neste filtro</span>`;
+  if (drill) {
+    if (drill.i >= drill.ids.length) { finishDrill(); return; }
+    const q = BANK.find((x) => x.id === drill.ids[drill.i]);
+    if (!q) { finishDrill(); return; }
+    const rec = ans[q.id];
+    const pick = rec ? rec.choice : qPick;
+    box.innerHTML = `
+      <article class="q-card ${rev[q.id] ? "flagged" : ""}" id="q-atual">
+        <p class="tag">Treino ${drill.i + 1}/${drill.ids.length} · ${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}${rev[q.id] ? " · para revisão" : ""}</p>
+        <h3>${q.stem}</h3>
+        ${q.choices.map((c, i) => {
+          const letter = "ABCD"[i];
+          let cls = "q-opt";
+          if (rec) {
+            if (i === q.answer) cls += " ok";
+            else if (i === rec.choice) cls += " bad";
+          } else if (pick === i) cls += " sel";
+          return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}>${letter}) ${c}</button>`;
+        }).join("")}
+        ${!rec ? `<div class="q-nav"><button type="button" class="btn gold" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
+        ${rec ? feedbackHtml(q, rec) : ""}
+        <div class="q-nav">
+          ${rec ? `<button type="button" class="btn gold" id="drill-next">${drill.i + 1 >= drill.ids.length ? "Ver relatório" : "Próxima"}</button>` : ""}
+          <button type="button" class="btn" id="q-flag">${rev[q.id] ? "Remover da revisão" : "Marcar para revisão"}</button>
+          <button type="button" class="btn" id="drill-abort">Encerrar treino</button>
+        </div>
+      </article>
+    `;
+    bindQuestionCard(box, q, rec);
+    const nxt = document.getElementById("drill-next");
+    if (nxt) nxt.addEventListener("click", () => { drill.i += 1; qPick = null; renderQuestoes(); });
+    const abort = document.getElementById("drill-abort");
+    if (abort) abort.addEventListener("click", finishDrill);
+    return;
+  }
   if (!list.length) {
     box.innerHTML = `<article class="card"><h3>Nenhuma questão neste filtro</h3><p>Troque o filtro acima. Banco total: ${BANK.length}.</p></article>`;
     return;
@@ -794,11 +1103,11 @@ function renderQuestoes() {
     <div class="q-grid">
       ${list.map((item, i) => {
         const a = ans[item.id];
-        return `<button type="button" class="${i === qIndex ? "on" : ""} ${a ? (a.ok ? "marked" : "bad") : ""}" data-jump="${i}">${item.id.replace("q", "")}</button>`;
+        return `<button type="button" class="${i === qIndex ? "on" : ""} ${a ? (a.ok ? "marked" : "bad") : ""} ${rev[item.id] ? "flag" : ""}" data-jump="${i}">${item.id.replace("q", "")}</button>`;
       }).join("")}
     </div>
-    <article class="q-card" id="q-atual">
-      <p class="tag">${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}</p>
+    <article class="q-card ${rev[q.id] ? "flagged" : ""}" id="q-atual">
+      <p class="tag">${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}${rev[q.id] ? " · para revisão" : ""}</p>
       <h3>${qIndex + 1}/${list.length}. ${q.stem}</h3>
       ${q.choices.map((c, i) => {
         const letter = "ABCD"[i];
@@ -807,13 +1116,14 @@ function renderQuestoes() {
           if (i === q.answer) cls += " ok";
           else if (i === rec.choice) cls += " bad";
         } else if (pick === i) cls += " sel";
-        return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}>${letter}) ${c}</button>`;
+        return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}><span class="q-letter">${letter}</span> ${c}${rec && i === q.answer ? " <span class='q-mark'>correta</span>" : ""}${rec && i === rec.choice && !rec.ok ? " <span class='q-mark bad'>sua resposta</span>" : ""}</button>`;
       }).join("")}
       ${!rec ? `<div class="q-nav"><button type="button" class="btn gold" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
-      ${rec ? `<p class="explain"><b>${rec.ok ? "Certo." : "Errado."}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p>${q.alts ? `<p class="explain">${q.choices.map((_, i) => "<b>" + "ABCD"[i] + "</b>: " + q.alts[i]).join("<br>")}</p>` : ""}` : ""}
+      ${rec ? feedbackHtml(q, rec) : ""}
       <div class="q-nav">
         <button type="button" class="btn" id="q-prev">Anterior</button>
         <button type="button" class="btn" id="q-next">Próxima</button>
+        <button type="button" class="btn" id="q-flag">${rev[q.id] ? "Remover da revisão" : "Marcar para revisão"}</button>
       </div>
     </article>
     <article class="card">
@@ -822,7 +1132,7 @@ function renderQuestoes() {
         ${list.map((item, i) => {
           const a = ans[item.id];
           const st = a ? (a.ok ? "certo" : "errado") : "aberta";
-          return `<li><button type="button" class="btn" data-jump="${i}">${item.id}</button> ${item.disc} · ${item.topic} · ${st}</li>`;
+          return `<li><button type="button" class="btn" data-jump="${i}">${item.id}</button> ${item.disc} · ${item.topic} · ${st}${rev[item.id] ? " · revisão" : ""}</li>`;
         }).join("")}
       </ul>
     </article>
@@ -830,6 +1140,20 @@ function renderQuestoes() {
   box.querySelectorAll("button[data-jump]").forEach((btn) => {
     btn.addEventListener("click", () => { qIndex = Number(btn.dataset.jump); qPick = null; renderQuestoes(); });
   });
+  bindQuestionCard(box, q, rec);
+  const prev = document.getElementById("q-prev");
+  const nxt = document.getElementById("q-next");
+  if (prev) prev.addEventListener("click", () => { qIndex = (qIndex - 1 + list.length) % list.length; qPick = null; renderQuestoes(); });
+  if (nxt) nxt.addEventListener("click", () => { qIndex = (qIndex + 1) % list.length; qPick = null; renderQuestoes(); });
+}
+
+function feedbackHtml(q, rec) {
+  const head = rec.ok ? "Certo." : "Errado.";
+  const alts = q.alts ? `<p class="explain">${q.choices.map((_, i) => "<b>" + "ABCD"[i] + "</b>: " + q.alts[i]).join("<br>")}</p>` : "";
+  return `<p class="explain"><b>${head}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p><p class="explain"><b>Fundamento:</b> ${q.art}.</p>${alts}`;
+}
+
+function bindQuestionCard(box, q, rec) {
   box.querySelectorAll("button[data-choice]").forEach((btn) => {
     btn.addEventListener("click", () => { qPick = Number(btn.dataset.choice); renderQuestoes(); });
   });
@@ -846,12 +1170,19 @@ function renderQuestoes() {
       if (typeof renderCaderno === "function") renderCaderno();
       if (typeof renderEdital === "function") renderEdital();
       if (typeof renderToday === "function") renderToday();
+      if (typeof renderStatsLive === "function") renderStatsLive();
     });
   }
-  const prev = document.getElementById("q-prev");
-  const nxt = document.getElementById("q-next");
-  if (prev) prev.addEventListener("click", () => { qIndex = (qIndex - 1 + list.length) % list.length; qPick = null; renderQuestoes(); });
-  if (nxt) nxt.addEventListener("click", () => { qIndex = (qIndex + 1) % list.length; qPick = null; renderQuestoes(); });
+  const flag = document.getElementById("q-flag");
+  if (flag) {
+    flag.addEventListener("click", () => {
+      const map = loadReview();
+      if (map[q.id]) delete map[q.id];
+      else map[q.id] = { at: Date.now() };
+      saveReview(map);
+      renderQuestoes();
+    });
+  }
 }
 
 try { renderQuestoes(); } catch (_) {}
@@ -924,6 +1255,18 @@ const MORE_BANK2 = [
   { id: "q75", disc: "Específicas", topic: "CF 5º", sub: "Remédios constitucionais", level: "média", art: "CF Art. 5º", stem: "O habeas data, no Art. 5º da CF, destina-se, em síntese, a:", choices: ["Fazer cessar violência ou coação à liberdade de locomoção.", "Assegurar conhecimento ou retificação de dados relativos à pessoa, em registros de entidade governamental ou de caráter público.", "Proteger direito líquido e certo não amparado por habeas corpus ou habeas data.", "Questionar lei em tese no STF, como ação direta de inconstitucionalidade."], answer: 1, why: "Art. 5º, LXXII: habeas data. HC (LXVIII) protege locomoção. Mandado de segurança (LXIX) protege direito líquido e certo residual. ADI não é remédio do Art. 5º para o particular nesse enunciado.", alts: ["Isso é habeas corpus.", "Certo.", "Isso é mandado de segurança.", "ADI é controle concentrado, não o habeas data."] }
 ];
 MORE_BANK2.forEach((q) => BANK.push(q));
+
+const MORE_BANK3 = [
+  { id: "q76", disc: "Específicas", topic: "Anexo I", sub: "Licença comercial", level: "média", art: "Edital Anexo I", stem: "O Fiscal de Posturas encontra um comércio aberto, sem licença de funcionamento. À luz das atribuições do Anexo I, a conduta adequada é:", choices: ["Lançar ISS e constituir o crédito tributário.", "Verificar a regularidade do licenciamento da atividade, lavrar o que a chefia determinar e relatar a irregularidade, sem exercer fiscalização tributária.", "Embargar a obra por dano ambiental, como Fiscal de Meio Ambiente.", "Aplicar pena de demissão ao comerciante, no mesmo ato."], answer: 1, why: "Anexo I: verificar regularidade do licenciamento da atividade, lavrar e relatar. ISS é Fiscal de Tributos. Dano ambiental é Meio Ambiente. Demissão é penalidade estatutária de servidor, não de particular fiscalizado.", alts: ["Função de Tributos, não de Posturas.", "Certo: licenciamento, auto e relatório.", "Função de Meio Ambiente.", "Demissão não se aplica a particular nesse contexto."] },
+  { id: "q77", disc: "Específicas", topic: "Anexo I", sub: "Ambulante", level: "fácil", art: "Edital Anexo I", stem: "Diante de comércio ambulante sem a documentação exigida, o Fiscal de Posturas deve, segundo o Anexo I:", choices: ["Impedir o comércio de quem não tenha a documentação exigida.", "Cobrar taxa de ISS no local.", "Liberar a atividade se o produto for alimentício.", "Apenas orientar, sem qualquer registro, ainda que a chefia determine o auto."], answer: 0, why: "Anexo I: impedir o comércio de quem não tenha a documentação exigida. Tributos não se confundem com posturas.", alts: ["Certo.", "ISS não é atribuição de Posturas.", "Alimento não dispensa documentação de posturas.", "O Anexo I prevê lavrar o que a chefia determinar."] },
+  { id: "q78", disc: "Específicas", topic: "Anexo I", sub: "Publicidade", level: "média", art: "Edital Anexo I", stem: "A fiscalização de anúncios, alto-falantes e propaganda em muros, tapumes e vitrines, no Anexo I, compete ao Fiscal de Posturas como controle de:", choices: ["Crédito tributário de ISS sobre propaganda.", "Posturas de publicidade em logradouro e fachadas, sem lançar tributo.", "Licenciamento ambiental de ruído, exclusivo da União.", "Direito autoral da obra anunciada."], answer: 1, why: "Anexo I lista publicidade (anúncios, alto-falantes, propaganda em muros, tapumes e vitrines) como atribuição de Posturas. Não é lançamento de ISS nem direito autoral.", alts: ["Tributos.", "Certo.", "Fora do Anexo I do cargo.", "Fora do Anexo I do cargo."] },
+  { id: "q79", disc: "Específicas", topic: "Anexo I", sub: "Apreensão", level: "média", art: "Edital Anexo I", stem: "Na apreensão de mercadorias, veículos, animais ou objetos em ruas, o Anexo I indica que o Fiscal de Posturas deve:", choices: ["Ficar com o bem em casa, como garantia pessoal.", "Guardar em depósito público e devolver após as formalidades e o pagamento da multa, quando couber.", "Doar imediatamente a terceiros.", "Remeter o bem à Receita Federal, sempre."], answer: 1, why: "Anexo I: apreensão, guarda em depósito público e devolução após formalidades e multa. Não é apropriação pessoal nem competência tributária federal automática.", alts: ["Vedado.", "Certo.", "Não previsto.", "Não é a regra do Anexo I."] },
+  { id: "q80", disc: "Específicas", topic: "Atos", sub: "Poder de polícia", level: "média", art: "Doutrina · Anexo II", stem: "A apreensão de mercadoria irregular em logradouro e a interdição de estabelecimento, no recorte do cargo, ligam-se sobretudo ao:", choices: ["Poder hierárquico, exclusivo da Câmara.", "Poder de polícia administrativa, com autoexecutoriedade quando a lei autoriza a medida imediata.", "Poder regulamentar do particular.", "Controle concentrado de constitucionalidade."], answer: 1, why: "Poder de polícia: condicionar e restringir direitos em nome do interesse público. Autoexecutoriedade autoriza a Administração a executar a medida (apreensão, interdição) sem prévia ordem judicial, nos limites da lei. Não confundir com hierarquia interna nem com ADI.", alts: ["Hierarquia é relação interna da Administração.", "Certo.", "Particular não exerce poder regulamentar estatal.", "ADI não é ato de polícia de rua."] },
+  { id: "q81", disc: "Português", topic: "Morfologia", sub: "Classes de palavras", level: "média", art: "Anexo II · classes de palavras", stem: "Em 'A fiscalização ocorreu ontem, conforme o edital', a palavra 'conforme' classifica-se, no contexto, como:", choices: ["Substantivo.", "Adjetivo.", "Preposição (ou locução prepositiva de conformidade).", "Interjeição."], answer: 2, why: "Conforme, aqui, introduz circunstância de conformidade (preposição). Não nomeia (substantivo), não caracteriza um substantivo (adjetivo) e não expressa emoção (interjeição).", alts: ["Não é nome.", "Não caracteriza substantivo neste uso.", "Certo.", "Interjeição seria 'nossa!', 'olha!'. "] },
+  { id: "q82", disc: "Específicas", topic: "Informática", sub: "Ransomware", level: "fácil", art: "Anexo II · segurança da informação", stem: "Ransomware, em oposição ao phishing, é principalmente:", choices: ["Página falsa para capturar senha.", "Malware que criptografa arquivos e exige resgate para devolvê-los.", "Cópia de segurança em nuvem.", "Atualização legítima do Windows."], answer: 1, why: "Ransomware: sequestro por criptografia. Phishing: engenharia social para obter dados. Backup é defesa, não o ataque.", alts: ["Isso é phishing.", "Certo.", "Backup é proteção.", "Atualização não é ransomware."] },
+  { id: "q83", disc: "Específicas", topic: "Ética", sub: "Presentes", level: "média", art: "Anexo II · ética / Lei 946 Art. 204", stem: "Aceitar presente de estabelecimento fiscalizado, para facilitar a liberação de banca em logradouro, ofende sobretudo:", choices: ["O dever de zelo, sigilo e primazia do interesse público, além da ética profissional do Anexo II.", "Apenas a Lei de Diretrizes Orçamentárias, em profundidade de TCU.", "O direito autoral da logomarca da banca.", "Nenhuma norma, se o valor for simbólico e não houver recibo."], answer: 0, why: "Ética profissional (Anexo II) e deveres do Art. 204 da Lei 946 (zelo, levar irregularidade à autoridade, urbanidade, sigilo). Interesse particular do fiscalizado não se sobrepõe ao público. LDO/TCU não são o fundamento imediato desta conduta de rua.", alts: ["Certo.", "Fora do recorte de profundidade do Fiscal.", "Não é o núcleo da ética funcional.", "Valor simbólico não legitima a vantagem."] }
+];
+MORE_BANK3.forEach((q) => BANK.push(q));
 try { renderQuestoes(); } catch (_) {}
 try { renderEdital(); } catch (_) {}
 
@@ -1163,6 +1506,10 @@ function renderCaderno() {
     if (cadFilter === "d7") return c.step === 2;
     return true;
   });
+  const repeats = all.filter((c) => (c.misses || 1) > 1);
+  const topicHits = {};
+  all.forEach((c) => { topicHits[c.topic] = (topicHits[c.topic] || 0) + (c.misses || 1); });
+  const hotTopics = Object.keys(topicHits).sort((a, b) => topicHits[b] - topicHits[a]).slice(0, 5);
   if (!all.length) {
     box.innerHTML = `<article class="card"><h3>Nenhum erro registrado</h3><p>Ainda não há fichas. Erre uma questão no banco ou no simulado e ela entra aqui no mesmo dia, com D+1, D+3 e D+7.</p><div class="q-nav"><button type="button" class="btn gold" id="cad-go-q">Começar a resolver questões</button></div></article>`;
     const go = document.getElementById("cad-go-q");
@@ -1185,15 +1532,24 @@ function renderCaderno() {
       <button type="button" class="chip ${cadFilter === "d3" ? "active" : ""}" data-cf="d3">D+3</button>
       <button type="button" class="chip ${cadFilter === "d7" ? "active" : ""}" data-cf="d7">D+7</button>
     </div>
+    <div class="dash q-dash">
+      <div class="stat"><b>${due.length}</b><span>revisar hoje</span></div>
+      <div class="stat"><b>${all.filter((c) => (c.step || 0) === 0).length}</b><span>D+1</span></div>
+      <div class="stat"><b>${all.filter((c) => c.step === 1).length}</b><span>D+3</span></div>
+      <div class="stat"><b>${all.filter((c) => c.step === 2).length}</b><span>D+7</span></div>
+    </div>
     <article class="card">
       <h3>${all.length} fichas · ${due.length} para revisar agora · ${list.length} neste filtro</h3>
-      <p>Errar de novo volta para D+1. Acertar avança D+1 → D+3 → D+7. Depois some da fila ativa.</p>
+      <p>Errar de novo volta para D+1. Acertar avança D+1 → D+3 → D+7. Depois some da fila ativa. Resolver de novo abre a questão original sem apagar esta ficha.</p>
+      ${repeats.length ? `<p><b>Reincidentes:</b> ${repeats.length} questão(ões) errada(s) mais de uma vez.</p>` : ""}
+      ${hotTopics.length ? `<p><b>Assuntos com reincidência:</b> ${hotTopics.map((t) => t + " (" + topicHits[t] + ")").join(", ")}.</p>` : ""}
     </article>
     ${list.length ? list.map((c) => {
       const late = c.due <= now;
       const dueDate = new Date(c.due).toLocaleDateString("pt-BR");
-      return `<article class="q-card">
-        <p class="tag">${c.disc} · ${c.topic} · ${stepLabel(c.step)} · ${c.misses} erro${c.misses > 1 ? "s" : ""} ${late ? "· revisar hoje" : "· " + dueDate}</p>
+      const extra = (c.misses || 1) > 1 ? " repeat" : "";
+      return `<article class="q-card${late ? " due-now" : ""}${extra}">
+        <p class="tag">${c.disc} · ${c.topic} · ${stepLabel(c.step)} · ${c.misses} erro${c.misses > 1 ? "s" : ""} ${late ? "· revisar hoje" : "· " + dueDate}${(c.misses || 1) > 1 ? " · reincidência" : ""}</p>
         <h3>${c.stem}</h3>
         <p class="explain"><b>${c.art}.</b> ${c.why}</p>
         <div class="q-nav">
@@ -1280,7 +1636,8 @@ function collectBackup() {
     edital: loadEdital(),
     answers: loadAnswers(),
     sims: loadSims(),
-    caderno: loadCaderno()
+    caderno: loadCaderno(),
+    review: loadReview()
   };
 }
 
@@ -1293,17 +1650,61 @@ function applyBackup(data) {
   if (data.sims != null && !Array.isArray(data.sims)) throw new Error("campo sims inválido");
   if (data.caderno != null && !Array.isArray(data.caderno)) throw new Error("campo caderno inválido");
   if (data.blocks != null && (typeof data.blocks !== "object" || Array.isArray(data.blocks))) throw new Error("campo blocks inválido");
+  if (data.review != null && (typeof data.review !== "object" || Array.isArray(data.review))) throw new Error("campo review inválido");
   if (data.done) saveDone(data.done);
   if (data.edital) saveEdital(data.edital);
   if (data.answers) saveAnswers(data.answers);
   if (data.sims) saveSims(data.sims);
   if (data.caderno) saveCaderno(data.caderno);
+  if (data.review) saveReview(data.review);
   if (data.blocks) {
     Object.keys(data.blocks).forEach((k) => {
       if (/^b-2026-11-\d{2}-\d$/.test(k)) lsSet(k, data.blocks[k] === "1" ? "1" : "0");
     });
   }
 }
+
+function renderStatsLive() {
+  const el = document.getElementById("stats-live");
+  if (!el) return;
+  const g = answerStats();
+  const discs = discStats();
+  const weak = topicStats(2);
+  const untouched = unansweredTopics();
+  const best = discs.slice().sort((a, b) => (b.done ? b.pct : -1) - (a.done ? a.pct : -1))[0];
+  const worst = discs.filter((d) => d.done >= 2).sort((a, b) => a.pct - b.pct)[0];
+  const revN = Object.keys(loadReview()).length;
+  const cad = typeof loadCaderno === "function" ? loadCaderno() : [];
+  const due = cad.filter((c) => c.due <= Date.now()).length;
+  let rec = "Responda ao menos duas questões por disciplina para eu apontar dificuldade recorrente. Percentuais ignoram questões em branco.";
+  if (worst && best && worst.disc !== best.disc && worst.done >= 2 && best.done >= 2) {
+    rec = "Seu aproveitamento em " + worst.disc + " (" + worst.pct + "%) está abaixo de " + best.disc + " (" + best.pct + "%). ";
+    if (weak[0]) rec += "Priorize " + weak[0].topic + " na próxima sessão de recuperação ativa.";
+  } else if (weak[0]) {
+    rec = "Minha maior dificuldade (mínimo 2 respostas no assunto): " + weak[0].key + " · " + weak[0].pct + "% (" + weak[0].ok + "/" + weak[0].n + "). Revise com questões, não só releitura.";
+  }
+  el.innerHTML = `
+    <article class="card">
+      <h3>Desempenho no banco</h3>
+      <div class="dash q-dash">
+        <div class="stat"><b>${g.done}</b><span>resolvidas no total</span></div>
+        <div class="stat"><b>${g.pct}%</b><span>acerto geral (só respondidas)</span></div>
+        <div class="stat"><b>${revN}</b><span>marcadas para revisar</span></div>
+        <div class="stat"><b>${due}</b><span>caderno para hoje</span></div>
+      </div>
+      <div class="disc-bars">
+        ${discs.map((d) => `<div class="bar-row"><div class="bar-meta"><span>${d.disc}</span><b>${d.done ? d.pct + "%" : "sem amostra"} · ${d.ok}/${d.done || 0}</b></div><div class="bar"><i style="width:${d.done ? d.pct : 0}%"></i></div></div>`).join("")}
+      </div>
+    </article>
+    <article class="card ${weak[0] ? "warn" : "good"}">
+      <h3>Minha maior dificuldade</h3>
+      <p>${rec}</p>
+      ${weak.length ? `<ul>${weak.slice(0, 5).map((t) => `<li>${t.key}: ${t.pct}% (${t.ok}/${t.n})</li>`).join("")}</ul>` : "<p>Ainda não há assunto com pelo menos 2 respostas para ranquear.</p>"}
+      ${untouched.length ? `<p class="tree-meta">Assuntos ainda sem prática: ${untouched.map((t) => t.topic).slice(0, 8).join(", ")}${untouched.length > 8 ? "…" : ""}.</p>` : ""}
+    </article>
+  `;
+}
+try { renderStatsLive(); } catch (_) {}
 
 const btnExport = document.getElementById("btn-export");
 if (btnExport) {
@@ -1332,9 +1733,10 @@ if (btnImport) {
         renderQuestoes();
 try { renderSimHome(); } catch (_) {}
         renderCaderno();
+        try { renderStatsLive(); } catch (_) {}
       } catch (err) {
         const bar = document.querySelector(".backup-bar span");
-        if (bar) bar.textContent = "Importação falhou: JSON inválido.";
+        if (bar) bar.textContent = "Importação falhou: " + (err && err.message ? err.message : "JSON inválido.");
       }
       btnImport.value = "";
     };
