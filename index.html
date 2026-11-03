@@ -8,7 +8,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600;700&display=swap" rel="stylesheet" />
   <meta http-equiv="Cache-Control" content="no-store" />
-  <link rel="stylesheet" href="styles.css?v=20261103b" />
+  <script>
+    try {
+      var t = localStorage.getItem("tango-fiscal-theme");
+      if (t !== "dark" && t !== "light") {
+        t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+      }
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="styles.css?v=20261103c" />
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Ir ao conteúdo</a>
@@ -18,9 +27,15 @@
       <h1>Fiscal de Posturas</h1>
       <p class="sub">Código 101 · 2 vagas AC · ensino médio</p>
     </div>
-    <div class="countdown" id="countdown" aria-live="polite">
-      <div class="count-num" id="daysLeft">--</div>
-      <div class="count-label">dias até a prova</div>
+    <div class="top-actions">
+      <button type="button" class="theme-btn" id="btn-theme" aria-pressed="false" aria-label="Ativar modo escuro">
+        <span class="theme-icon" aria-hidden="true"></span>
+        <span class="theme-label">Modo escuro</span>
+      </button>
+      <div class="countdown" id="countdown" aria-live="polite">
+        <div class="count-num" id="daysLeft">--</div>
+        <div class="count-label">dias até a prova</div>
+      </div>
     </div>
   </header>
 
@@ -501,7 +516,7 @@
       </div>
     </div>
   </div>
-  <script src="app.js?v=20261103b"></script>
-  <script src="dia.js?v=20261103b"></script>
+  <script src="app.js?v=20261103c"></script>
+  <script src="dia.js?v=20261103c"></script>
 </body>
 </html>
