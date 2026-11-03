@@ -301,12 +301,53 @@ const DAYS = [
 ];
 
 const doneKey = "tango-fiscal-done";
+const themeKey = "tango-fiscal-theme";
 function lsGet(k) {
   try { return window.localStorage.getItem(k); } catch { return null; }
 }
 function lsSet(k, v) {
   try { window.localStorage.setItem(k, v); } catch {}
 }
+function osThemePref() {
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  } catch (_) {}
+  return "light";
+}
+function loadTheme() {
+  const v = lsGet(themeKey);
+  if (v === "dark" || v === "light") return v;
+  return osThemePref();
+}
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+}
+function syncThemeButton(t) {
+  const btn = document.getElementById("btn-theme");
+  if (!btn) return;
+  const dark = t === "dark";
+  btn.setAttribute("aria-pressed", dark ? "true" : "false");
+  btn.setAttribute("aria-label", dark ? "Ativar modo claro" : "Ativar modo escuro");
+  const lab = btn.querySelector(".theme-label");
+  if (lab) lab.textContent = dark ? "Modo claro" : "Modo escuro";
+}
+function applyTheme(theme, persist) {
+  const t = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", t);
+  if (persist) lsSet(themeKey, t);
+  syncThemeButton(t);
+}
+function initTheme() {
+  const saved = lsGet(themeKey);
+  applyTheme(saved === "dark" || saved === "light" ? saved : osThemePref(), false);
+  const btn = document.getElementById("btn-theme");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
+    });
+  }
+}
+initTheme();
 function loadDone() {
   try { return JSON.parse(lsGet(doneKey) || "{}"); } catch { return {}; }
 }
@@ -1325,7 +1366,7 @@ const MORE_BANK = [
   { id: "q32", disc: "Português", topic: "Regência", art: "Gramática", stem: "A regência está correta em:", choices: ["O edital visa o cargo de Fiscal.", "O servidor assistiu o treinamento ontem, no sentido de ver.", "A chefia obedeceu o regulamento interno.", "O candidato aspira ao cargo público."], answer: 3, why: "Visar (= ter por objetivo) e aspirar (= pretender) pedem a. Assistir (= ver) pede a. Obedecer pede a. 'Aspira ao cargo' está certo." },
   { id: "q33", disc: "Português", topic: "Ortografia", art: "Acordo Ortográfico", stem: "Está grafada de acordo com a norma culta:", choices: ["A interdição foi impecilida pelo recurso.", "A sindicância apurou a excessão prevista em lei.", "A cassação da aposentadoria é penalidade.", "O servidor foi exhonerado a pedido."], answer: 2, why: "Certo: cassação. Errado: impedida (não impecilida), exceção, exonerado (sem h, um x)." },
   { id: "q34", disc: "Português", topic: "Pontuação", art: "Gramática", stem: "A vírgula está corretamente empregada em:", choices: ["O fiscal, lavrou o auto de infração.", "Tanguá, 22 de novembro de 2026.", "A posse ocorreu, no prazo legal sem atraso.", "Quem, estudar o Art. 37 passa na prova."], answer: 1, why: "Vírgula em vocativo/local e data é clássica. Não se separa sujeito de verbo ('O fiscal, lavrou')." },
-  { id: "q35", disc: "Português", topic: "Formação", art: "Morfologia", stem: "Em 'improbidade', o processo de formação é, principalmente:", choices: ["Composição por justaposição.", "Derivação prefixal e sufixal a partir de 'probo'.", "Hibridismo.", "Onomatopeia."], answer: 1, why: "Im- (prefixo de negação) + probo + -idade (sufixo). IBDO já cobrou formação de palavras em Paraibuna 2019, segundo o briefing." },
+  { id: "q35", disc: "Português", topic: "Formação", art: "Morfologia", stem: "Em 'improbidade', o processo de formação é, principalmente:", choices: ["Composição por justaposição.", "Derivação prefixal e sufixal a partir de 'probo'.", "Hibridismo.", "Onomatopeia."], answer: 1, why: "Im- (prefixo de negação) + probo + -idade (sufixo). Derivação prefixal e sufixal, não composição por justaposição." },
   { id: "q36", disc: "Português", topic: "Semântica", art: "Gramática", stem: "Em 'O servidor agiu com mãos limpas', há, em relação a 'mãos limpas':", choices: ["Sentido denotativo, literal.", "Sentido conotativo, figurado.", "Neologismo técnico.", "Vício de linguagem por cacofonia."], answer: 1, why: "Conotação: sentido figurado (probidade). Denotação seria o sentido literal das mãos." },
   { id: "q37", disc: "Português", topic: "Coesão", art: "Gramática", stem: "O conectivo que expressa oposição é:", choices: ["Portanto.", "Porque.", "Contudo.", "Conforme."], answer: 2, why: "Contudo/porém/entretanto = oposição. Portanto = conclusão. Porque = causa. Conforme = conformidade." },
   { id: "q38", disc: "Português", topic: "Crase", art: "Gramática", stem: "NÃO se usa crase em:", choices: ["Referiu-se à Lei 946/2014.", "Foi à Câmara Municipal.", "Chegou à Prefeitura cedo.", "Caminhou à pé até o local de prova."], answer: 3, why: "À pé é erro: pé é masculino. 'A pé' sem crase." },
@@ -1335,14 +1376,14 @@ const MORE_BANK = [
 MORE_BANK.forEach((q) => BANK.push(q));
 
 const MORE_BANK2 = [
-  { id: "q41", disc: "Português", topic: "Fonologia", sub: "Letra e fonema", level: "média", art: "Anexo II · Fonologia/fonética", stem: "Em 'táxi', o número de letras e de fonemas é, respectivamente:", choices: ["4 letras e 4 fonemas.", "4 letras e 5 fonemas.", "5 letras e 4 fonemas.", "5 letras e 5 fonemas."], answer: 2, why: "T-Á-X-I: 4 letras. O X vale /ks/, logo 5 fonemas: /t/ /a/ /k/ /s/ /i/. Anexo II cobra letra/fonema.", alts: ["Conta o X como um só fonema e ignora o valor /ks/.", "Inverte letras e fonemas.", "Certo: 4 letras, 5 fonemas (/ks/).", "Trata letra e fonema como sempre iguais."] },
+  { id: "q41", disc: "Português", topic: "Fonologia", sub: "Letra e fonema", level: "média", art: "Anexo II · Fonologia/fonética", stem: "Em 'táxi', o número de letras e de fonemas é, respectivamente:", choices: ["4 letras e 4 fonemas.", "4 letras e 5 fonemas.", "5 letras e 4 fonemas.", "5 letras e 5 fonemas."], answer: 1, why: "T-Á-X-I: 4 letras. O X vale /ks/, logo 5 fonemas: /t/ /a/ /k/ /s/ /i/. Anexo II cobra letra/fonema.", alts: ["Conta o X como um só fonema e ignora o valor /ks/.", "Certo: 4 letras, 5 fonemas (/ks/).", "Inverte letras e fonemas.", "Trata letra e fonema como sempre iguais."] },
   { id: "q42", disc: "Português", topic: "Fonologia", sub: "Encontros vocálicos", level: "média", art: "Anexo II · encontros vocálicos", stem: "Na palavra 'saída', o encontro vocálico em 'aí' é:", choices: ["Ditongo crescente.", "Ditongo decrescente.", "Hiato.", "Tritongo."], answer: 2, why: "Hiato: vogais em sílabas distintas (sa-í-da). Ditongo fica na mesma sílaba; tritongo é vogal entre duas semivogais na mesma sílaba.", alts: ["Ditongo crescente: semivogal + vogal na mesma sílaba (ex.: 'série').", "Ditongo decrescente: vogal + semivogal na mesma sílaba (ex.: 'pai').", "Certo: hiato.", "Tritongo: três sons na mesma sílaba (ex.: 'Uruguai')."] },
   { id: "q43", disc: "Português", topic: "Fonologia", sub: "Dígrafos", level: "fácil", art: "Anexo II · dígrafos", stem: "Há dígrafo em:", choices: ["prato.", "claro.", "chave.", "grito."], answer: 2, why: "Dígrafo: duas letras, um fonema. CH em 'chave' = /ʃ/. PR, CL e GR são encontros consonantais (dois fonemas).", alts: ["PR: encontro consonantal.", "CL: encontro consonantal.", "Certo: CH é dígrafo.", "GR: encontro consonantal."] },
   { id: "q44", disc: "Português", topic: "Figuras", sub: "Metáfora e metonímia", level: "média", art: "Anexo II · figuras de linguagem", stem: "Em 'A Câmara aprovou a lei orgânica', a figura predominante é:", choices: ["Metáfora.", "Metonímia (continente pelo conteúdo / instituição pelas pessoas).", "Hipérbole.", "Eufemismo."], answer: 1, why: "Metonímia: a instituição (Câmara) está pelos vereadores. Metáfora é comparação implícita. Hipérbole é exagero. Eufemismo suaviza.", alts: ["Metáfora exigiria comparação implícita sem o termo real.", "Certo: metonímia.", "Hipérbole seria exagero ('milhões de leis').", "Eufemismo suavizaria fato desagradável."] },
   { id: "q45", disc: "Português", topic: "Figuras", sub: "Hipérbole", level: "fácil", art: "Anexo II · figuras de linguagem", stem: "Há hipérbole em:", choices: ["O relatório está sobre a mesa.", "Esperei uma eternidade na fila da Prefeitura.", "O fiscal lavrou o auto.", "A lei foi publicada ontem."], answer: 1, why: "Hipérbole = exagero proposital ('eternidade'). As outras são denotativas.", alts: ["Denotativo.", "Certo: exagero.", "Denotativo.", "Denotativo."] },
   { id: "q46", disc: "Português", topic: "Ortografia", sub: "Por que / porque / porquê / por quê", level: "média", art: "Ortografia", stem: "A grafia está correta em:", choices: ["Não compareceu por que estava doente.", "Porque você faltou à posse?", "O porquê da desistência consta no processo.", "E agora, porque?"], answer: 2, why: "'O porquê' (substantivo, com artigo) leva acento. Explicação: porque. Pergunta no início: por que. Pergunta no fim: por quê.", alts: ["Explicação pede 'porque'.", "Pergunta no início: 'Por que'.", "Certo: substantivo 'o porquê'.", "Pergunta no fim: 'por quê?'."] },
   { id: "q47", disc: "Português", topic: "Ortografia", sub: "Acentuação", level: "média", art: "Acordo Ortográfico", stem: "Assinale a oxítona acentuada de acordo com a regra:", choices: ["júri.", "táxi.", "parabéns.", "líder."], answer: 2, why: "Oxítonas acentuam-se em a(s), e(s), o(s), em, ens. 'Parabéns' é oxítona em -ens. 'Júri', 'táxi' e 'líder' são paroxítonas.", alts: ["Paroxítona terminada em i.", "Paroxítona terminada em i.", "Certo: oxítona em -ens.", "Paroxítona terminada em r."] },
-  { id: "q48", disc: "Português", topic: "Concordância", sub: "Concordância nominal", level: "média", art: "Gramática", stem: "A concordância nominal está correta em:", choices: ["Segue anexo as certidões.", "É proibido permanência de ambulante sem licença, sem artigo.", "É necessário a apresentação do documento.", "Muito obrigado, disse a servidora."], answer: 1, why: "'É proibido' fica invariável sem artigo. Com artigo, varia: 'é necessária a apresentação'. 'Anexo' concorda: 'seguem anexas'. 'Obrigado' concorda com o falante.", alts: ["Certo seria 'seguem anexas as certidões'.", "Certo: sem artigo, 'proibido' não varia.", "Com artigo: 'é necessária a apresentação'.", "A servidora diria 'obrigada'."] },
+  { id: "q48", disc: "Português", topic: "Concordância", sub: "Concordância nominal", level: "média", art: "Gramática", stem: "A concordância nominal está correta em:", choices: ["Segue anexo as certidões.", "É proibido permanência de ambulante sem licença.", "É necessário a apresentação do documento.", "Muito obrigado, disse a servidora."], answer: 1, why: "'É proibido' fica invariável sem artigo. Com artigo, varia: 'é necessária a apresentação'. 'Anexo' concorda: 'seguem anexas'. 'Obrigado' concorda com o falante.", alts: ["Certo seria 'seguem anexas as certidões'.", "Certo: sem artigo, 'proibido' não varia.", "Com artigo: 'é necessária a apresentação'.", "A servidora diria 'obrigada'."] },
   { id: "q49", disc: "Português", topic: "Sintaxe", sub: "Colocação pronominal", level: "média", art: "Gramática", stem: "A colocação pronominal está de acordo com a norma culta em:", choices: ["Me informe o local de prova.", "Não o convidei para a sindicância.", "Devolver-lhe-ei o auto amanhã, na fala cotidiana obrigatória da prova objetiva.", "Vou se pronunciar no recurso."], answer: 1, why: "Pronome átono não inicia oração (próclise após 'não'). 'Me informe' no início é coloquial. Mesóclise é rara e formal. 'Vou se' é erro.", alts: ["Átono não inicia período na norma culta.", "Certo: próclise após palavra negativa.", "Mesóclise não é o que a prova de nível médio costuma exigir como 'obrigatória'.", "'Vou se' é desvio."] },
   { id: "q50", disc: "Português", topic: "Funções da linguagem", sub: "Função referencial", level: "fácil", art: "Anexo II · funções da linguagem", stem: "O edital que informa data, horário e local da prova exemplifica, predominantemente, a função:", choices: ["Poética.", "Referencial (denotativa).", "Emotiva.", "Fática."], answer: 1, why: "Função referencial: informar sobre o contexto, linguagem denotativa. Poética foca a mensagem estética; emotiva, o emissor; fática, o canal.", alts: ["Poética: estética do texto.", "Certo: informar fatos.", "Emotiva: sentimento do emissor.", "Fática: testar o canal ('alô?')."] },
   { id: "q51", disc: "Português", topic: "Tipos e gêneros", sub: "Texto dissertativo", level: "fácil", art: "Anexo II · tipos e gêneros", stem: "Um texto que defende uma tese com argumentos é, quanto ao tipo, principalmente:", choices: ["Narrativo.", "Dissertativo-argumentativo.", "Injuntivo.", "Descritivo."], answer: 1, why: "Dissertação argumentativa: tese + argumentos. Narração relata fatos; injunção instrui; descrição caracteriza.", alts: ["Narração: enredo, personagens, tempo.", "Certo.", "Injunção: receita, edital de 'faça X'.", "Descrição: características."] },
@@ -1384,6 +1425,37 @@ const MORE_BANK3 = [
   { id: "q83", disc: "Específicas", topic: "Ética", sub: "Presentes", level: "média", art: "Anexo II · ética / Lei 946 Art. 204", stem: "Aceitar presente de estabelecimento fiscalizado, para facilitar a liberação de banca em logradouro, ofende sobretudo:", choices: ["O dever de zelo, sigilo e primazia do interesse público, além da ética profissional do Anexo II.", "Apenas a Lei de Diretrizes Orçamentárias, em profundidade de TCU.", "O direito autoral da logomarca da banca.", "Nenhuma norma, se o valor for simbólico e não houver recibo."], answer: 0, why: "Ética profissional (Anexo II) e deveres do Art. 204 da Lei 946 (zelo, levar irregularidade à autoridade, urbanidade, sigilo). Interesse particular do fiscalizado não se sobrepõe ao público. LDO/TCU não são o fundamento imediato desta conduta de rua.", alts: ["Certo.", "Fora do recorte de profundidade do Fiscal.", "Não é o núcleo da ética funcional.", "Valor simbólico não legitima a vantagem."] }
 ];
 MORE_BANK3.forEach((q) => BANK.push(q));
+
+function regradeStoredAnswers() {
+  const ans = loadAnswers();
+  let changed = false;
+  Object.keys(ans).forEach((id) => {
+    const rec = ans[id];
+    const q = BANK.find((x) => x.id === id);
+    if (!q || !rec || typeof rec.choice !== "number") return;
+    const ok = rec.choice === q.answer;
+    if (rec.ok !== ok) {
+      rec.ok = ok;
+      rec.regradedAt = Date.now();
+      changed = true;
+    }
+  });
+  if (changed) saveAnswers(ans);
+  if (typeof loadCaderno !== "function") return;
+  const cad = loadCaderno();
+  const next = cad.map((item) => {
+    const q = BANK.find((x) => x.id === item.id);
+    if (!q) return item;
+    if (item.answer === q.answer) return item;
+    return Object.assign({}, item, { answer: q.answer });
+  }).filter((item) => {
+    const q = BANK.find((x) => x.id === item.id);
+    if (!q || typeof item.choice !== "number") return true;
+    return item.choice !== q.answer;
+  });
+  if (next.length !== cad.length || next.some((item, i) => item !== cad[i])) saveCaderno(next);
+}
+
 try { renderQuestoes(); } catch (_) {}
 try { renderEdital(); } catch (_) {}
 
@@ -1579,6 +1651,8 @@ function loadCaderno() {
   try { return JSON.parse(lsGet(cadKey) || "[]"); } catch { return []; }
 }
 function saveCaderno(arr) { lsSet(cadKey, JSON.stringify(arr)); }
+try { regradeStoredAnswers(); } catch (_) {}
+try { renderQuestoes(); } catch (_) {}
 
 function addDays(ts, n) {
   const d = new Date(ts);
@@ -1755,7 +1829,8 @@ function collectBackup() {
     answers: loadAnswers(),
     sims: loadSims(),
     caderno: loadCaderno(),
-    review: loadReview()
+    review: loadReview(),
+    theme: currentTheme()
   };
 }
 
@@ -1775,6 +1850,8 @@ function applyBackup(data) {
   if (data.sims) saveSims(data.sims);
   if (data.caderno) saveCaderno(data.caderno);
   if (data.review) saveReview(data.review);
+  if (data.theme === "dark" || data.theme === "light") applyTheme(data.theme, true);
+  try { regradeStoredAnswers(); } catch (_) {}
   if (data.blocks) {
     Object.keys(data.blocks).forEach((k) => {
       if (/^b-2026-11-\d{2}-\d$/.test(k)) lsSet(k, data.blocks[k] === "1" ? "1" : "0");
