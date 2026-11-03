@@ -460,6 +460,7 @@ document.querySelectorAll(".nav-btn[data-nav]").forEach((btn) => {
       return;
     }
     wantDrill = false;
+    qPick = null;
     if (n === "praticar") { uiPraticar = "questoes"; goPanel("questoes"); return; }
     if (n === "desempenho") { uiDesempenho = "pesos"; goPanel("pesos"); return; }
     if (n === "conteudos") { uiConteudos = "edital"; goPanel("edital"); return; }
@@ -469,8 +470,9 @@ document.querySelectorAll(".nav-btn[data-nav]").forEach((btn) => {
 document.querySelectorAll("#sub-praticar .subtab").forEach((btn) => {
   btn.addEventListener("click", () => {
     uiPraticar = btn.dataset.sub;
+    qPick = null;
     if (uiPraticar === "treino") { wantDrill = true; goPanel("questoes"); }
-    else { wantDrill = false; drill = null; goPanel("questoes"); }
+    else { wantDrill = false; goPanel("questoes"); }
   });
 });
 document.querySelectorAll("#sub-desempenho .subtab").forEach((btn) => {
@@ -577,7 +579,7 @@ function renderToday() {
   el.querySelectorAll("[data-home]").forEach((b) => {
     b.addEventListener("click", () => {
       const t = b.dataset.home;
-      if (t === "treino") { wantDrill = true; goPanel("questoes"); }
+      if (t === "treino") { qPick = null; wantDrill = true; goPanel("questoes"); }
       else if (t === "caderno") { uiDesempenho = "caderno"; goPanel("caderno"); }
       else goPanel(t);
     });
@@ -890,8 +892,7 @@ function bankList() {
   const ans = loadAnswers();
   const rev = loadReview();
   const q = (qSearch || "").trim().toLowerCase();
-  const src = drill && drill.ids ? drill.ids.map((id) => BANK.find((x) => x.id === id)).filter(Boolean) : BANK;
-  return src.filter((item) => {
+  return BANK.filter((item) => {
     if (qFilter !== "all" && item.disc !== qFilter) return false;
     if (qMode === "open" && ans[item.id]) return false;
     if (qMode === "ok" && !(ans[item.id] && ans[item.id].ok === true)) return false;
@@ -959,7 +960,6 @@ function resetQuestionMarks() {
   saveAnswers({});
   qIndex = 0;
   qPick = null;
-  drill = null;
 }
 
 function confirmWipeAnswers() {
@@ -971,9 +971,13 @@ function confirmWipeAnswers() {
   title.textContent = "Redefinir marcações";
   body.textContent = "Há " + n + " questão(ões) respondida(s) no banco. Você está prestes a redefinir as marcações do banco de questões. Essa ação apagará as respostas registradas e reiniciará as estatísticas de desempenho das questões. O caderno de erros, os simulados realizados, as marcações para revisão e o restante do seu progresso serão preservados. Deseja continuar?";
   modal.hidden = false;
+  const cancelOld = document.getElementById("q-modal-cancel");
+  const okOld = document.getElementById("q-modal-ok");
+  cancelOld.replaceWith(cancelOld.cloneNode(true));
+  okOld.replaceWith(okOld.cloneNode(true));
   const cancel = document.getElementById("q-modal-cancel");
   const ok = document.getElementById("q-modal-ok");
-  function close() { modal.hidden = true; cancel.removeEventListener("click", onCancel); ok.removeEventListener("click", onOk); }
+  function close() { modal.hidden = true; }
   function onCancel() { close(); setQStatus("Redefinição cancelada. Nada foi apagado."); }
   function onOk() {
     resetQuestionMarks();
@@ -990,7 +994,7 @@ function confirmWipeAnswers() {
 function paintQOverview() {
   const el = document.getElementById("q-overview");
   if (!el) return;
-  if (wantDrill || drill) { el.innerHTML = ""; return; }
+  if (wantDrill) { el.innerHTML = ""; return; }
   const g = answerStats();
   const discs = discStats();
   const topics = topicStats(2);
@@ -1025,6 +1029,8 @@ function paintQOverview() {
 function openDrillSetup() {
   const box = document.getElementById("q-box");
   if (!box) return;
+  drill = null;
+  qPick = null;
   wantDrill = true;
   uiPraticar = "treino";
   syncNav("questoes");
@@ -1063,7 +1069,7 @@ function openDrillSetup() {
     b.classList.add("active");
     src = b.dataset.ds;
   }));
-  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; wantDrill = false; uiPraticar = "questoes"; renderQuestoes(); syncNav("questoes"); });
+  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; qPick = null; wantDrill = false; uiPraticar = "questoes"; renderQuestoes(); syncNav("questoes"); });
   document.getElementById("drill-go").addEventListener("click", () => startDrill(n, src));
 }
 
@@ -1102,24 +1108,32 @@ function startDrill(n, src) {
     setQStatus("Não há questões nesse recorte para montar o treino.");
     return;
   }
-  drill = { ids, i: 0, picks: {} };
+  drill = { ids, i: 0, picks: {}, src: src, n: n };
   qIndex = 0;
   qPick = null;
   renderQuestoes();
 }
 
+function drillRec(q) {
+  if (!drill || !q) return null;
+  const rec = drill.picks[q.id];
+  return rec && typeof rec.choice === "number" ? rec : null;
+}
+
 function finishDrill() {
-  const ans = loadAnswers();
+  if (!drill || !drill.ids) return;
+  const picks = drill.picks || {};
   const qs = drill.ids.map((id) => BANK.find((x) => x.id === id)).filter(Boolean);
-  const done = qs.filter((q) => ans[q.id]);
-  const ok = done.filter((q) => ans[q.id].ok);
-  const bad = done.filter((q) => ans[q.id].ok === false);
+  const done = qs.filter((q) => picks[q.id] && typeof picks[q.id].choice === "number");
+  const ok = done.filter((q) => picks[q.id].ok);
+  const bad = done.filter((q) => picks[q.id].ok === false);
+  const blank = qs.length - done.length;
   const pct = done.length ? Math.round(ok.length * 100 / done.length) : 0;
   const by = {};
   done.forEach((q) => {
     by[q.disc] = by[q.disc] || { n: 0, ok: 0 };
     by[q.disc].n += 1;
-    if (ans[q.id].ok) by[q.disc].ok += 1;
+    if (picks[q.id].ok) by[q.disc].ok += 1;
   });
   const weakMap = {};
   bad.forEach((q) => {
@@ -1133,7 +1147,8 @@ function finishDrill() {
   box.innerHTML = `
     <article class="card good">
       <h3>Relatório do treino rápido</h3>
-      <p>Resolvidas: ${done.length} · Acertos: ${ok.length} · Erros: ${bad.length} · Aproveitamento: ${pct}%</p>
+      <p>Resolvidas: ${done.length} · Acertos: ${ok.length} · Erros: ${bad.length} · Em branco: ${blank} · Aproveitamento: ${pct}%</p>
+      ${blank ? `<p>Não respondidas: ${qs.filter((q) => !(picks[q.id] && typeof picks[q.id].choice === "number")).map((q) => q.id).join(", ")}.</p>` : ""}
       <ul>${Object.keys(by).map((d) => `<li><b>${d}:</b> ${by[d].ok}/${by[d].n} (${Math.round(by[d].ok * 100 / by[d].n)}%)</li>`).join("") || "<li>Sem respostas confirmadas.</li>"}</ul>
       <p><b>Reforço:</b> ${weakTopics.length ? weakTopics.join(", ") : "nenhum assunto com erro nesta sessão"}.</p>
       <p>${sug}</p>
@@ -1145,7 +1160,7 @@ function finishDrill() {
   `;
   drill = null;
   document.getElementById("drill-again").addEventListener("click", openDrillSetup);
-  document.getElementById("drill-back").addEventListener("click", () => { wantDrill = false; uiPraticar = "questoes"; renderQuestoes(); syncNav("questoes"); });
+  document.getElementById("drill-back").addEventListener("click", () => { wantDrill = false; uiPraticar = "questoes"; qPick = null; renderQuestoes(); syncNav("questoes"); });
 }
 
 function renderQuestoes() {
@@ -1154,13 +1169,59 @@ function renderQuestoes() {
   const filters = document.getElementById("q-filters");
   if (!box || !stats || !filters) return;
   if (wantDrill && !drill) { paintQOverview(); filters.innerHTML = ""; stats.innerHTML = ""; openDrillSetup(); return; }
+  if (wantDrill && drill) {
+    paintQOverview();
+    filters.innerHTML = "";
+    stats.innerHTML = "";
+    const rev = loadReview();
+    if (drill.i >= drill.ids.length) { finishDrill(); return; }
+    const q = BANK.find((x) => x.id === drill.ids[drill.i]);
+    if (!q) { finishDrill(); return; }
+    const rec = drillRec(q);
+    const pick = rec ? rec.choice : qPick;
+    box.innerHTML = `
+      <article class="q-card ${rev[q.id] ? "flagged" : ""}" id="q-atual">
+        <p class="tag">Treino ${drill.i + 1}/${drill.ids.length} · ${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}${rev[q.id] ? " · para revisão" : ""}</p>
+        <h3>${q.stem}</h3>
+        ${q.choices.map((c, i) => {
+          const letter = "ABCD"[i];
+          let cls = "q-opt";
+          if (rec) {
+            if (i === q.answer) cls += " ok";
+            else if (i === rec.choice) cls += " bad";
+          } else if (pick === i) cls += " sel";
+          return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}>${letter}) ${c}${rec && i === q.answer ? " <span class='q-mark'>correta</span>" : ""}${rec && i === rec.choice && !rec.ok ? " <span class='q-mark bad'>sua resposta</span>" : ""}</button>`;
+        }).join("")}
+        ${!rec ? `<div class="q-nav q-actions-main"><button type="button" class="btn primary" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
+        ${rec ? feedbackHtml(q, rec) : ""}
+        <div class="q-nav q-actions-sec">
+          <button type="button" class="btn" id="drill-prev" ${drill.i === 0 ? "disabled" : ""}>Anterior</button>
+          ${rec ? `<button type="button" class="btn primary" id="drill-next">${drill.i + 1 >= drill.ids.length ? "Ver relatório" : "Próxima"}</button>` : ""}
+          <button type="button" class="btn" id="q-flag">${rev[q.id] ? "Remover da revisão" : "Marcar para revisão"}</button>
+          <button type="button" class="btn" id="drill-restart">Reiniciar treino</button>
+          <button type="button" class="btn" id="drill-abort">Encerrar treino</button>
+        </div>
+      </article>
+    `;
+    bindQuestionCard(box, q, rec);
+    const prev = document.getElementById("drill-prev");
+    if (prev) prev.addEventListener("click", () => { if (drill.i > 0) { drill.i -= 1; qPick = null; renderQuestoes(); } });
+    const nxt = document.getElementById("drill-next");
+    if (nxt) nxt.addEventListener("click", () => { drill.i += 1; qPick = null; renderQuestoes(); });
+    const restart = document.getElementById("drill-restart");
+    if (restart) restart.addEventListener("click", () => {
+      drill.picks = {};
+      drill.i = 0;
+      qPick = null;
+      renderQuestoes();
+    });
+    const abort = document.getElementById("drill-abort");
+    if (abort) abort.addEventListener("click", finishDrill);
+    return;
+  }
   paintQOverview();
   const ans = loadAnswers();
   const rev = loadReview();
-  if (drill) {
-    filters.innerHTML = "";
-    stats.innerHTML = "";
-  } else {
   const discs = ["all", "Português", "Legislação", "Específicas"];
   const levels = ["all", "fácil", "média", "difícil"];
   const topics = ["all"].concat(Array.from(new Set(BANK.filter((q) => qFilter === "all" || q.disc === qFilter).map((q) => q.topic))).sort());
@@ -1210,45 +1271,8 @@ function renderQuestoes() {
       }, 220);
     });
   }
-  }
   const list = bankList();
-  const g = answerStats();
-  if (!drill) stats.innerHTML = `<span class="pill">${list.length} neste filtro</span><span class="pill">Treino · não oficiais</span>`;
-  if (drill) {
-    if (drill.i >= drill.ids.length) { finishDrill(); return; }
-    const q = BANK.find((x) => x.id === drill.ids[drill.i]);
-    if (!q) { finishDrill(); return; }
-    const rec = ans[q.id];
-    const pick = rec ? rec.choice : qPick;
-    box.innerHTML = `
-      <article class="q-card ${rev[q.id] ? "flagged" : ""}" id="q-atual">
-        <p class="tag">Treino ${drill.i + 1}/${drill.ids.length} · ${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}${rev[q.id] ? " · para revisão" : ""}</p>
-        <h3>${q.stem}</h3>
-        ${q.choices.map((c, i) => {
-          const letter = "ABCD"[i];
-          let cls = "q-opt";
-          if (rec) {
-            if (i === q.answer) cls += " ok";
-            else if (i === rec.choice) cls += " bad";
-          } else if (pick === i) cls += " sel";
-          return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}>${letter}) ${c}</button>`;
-        }).join("")}
-        ${!rec ? `<div class="q-nav q-actions-main"><button type="button" class="btn primary" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
-        ${rec ? feedbackHtml(q, rec) : ""}
-        <div class="q-nav q-actions-sec">
-          ${rec ? `<button type="button" class="btn primary" id="drill-next">${drill.i + 1 >= drill.ids.length ? "Ver relatório" : "Próxima"}</button>` : ""}
-          <button type="button" class="btn" id="q-flag">${rev[q.id] ? "Remover da revisão" : "Marcar para revisão"}</button>
-          <button type="button" class="btn" id="drill-abort">Encerrar treino</button>
-        </div>
-      </article>
-    `;
-    bindQuestionCard(box, q, rec);
-    const nxt = document.getElementById("drill-next");
-    if (nxt) nxt.addEventListener("click", () => { drill.i += 1; qPick = null; renderQuestoes(); });
-    const abort = document.getElementById("drill-abort");
-    if (abort) abort.addEventListener("click", finishDrill);
-    return;
-  }
+  stats.innerHTML = `<span class="pill">${list.length} neste filtro</span><span class="pill">Treino · não oficiais</span>`;
   if (!list.length) {
     box.innerHTML = `<article class="card"><h3>Nenhuma questão neste filtro</h3><p>Troque o filtro acima. Banco total: ${BANK.length}.</p></article>`;
     return;
@@ -1319,6 +1343,12 @@ function bindQuestionCard(box, q, rec) {
   if (conf) {
     conf.addEventListener("click", () => {
       if (qPick == null) return;
+      if (wantDrill && drill) {
+        drill.picks[q.id] = { choice: qPick, ok: qPick === q.answer, at: Date.now() };
+        qPick = null;
+        renderQuestoes();
+        return;
+      }
       const next = loadAnswers();
       next[q.id] = { choice: qPick, ok: qPick === q.answer, at: Date.now() };
       saveAnswers(next);
@@ -1425,6 +1455,12 @@ const MORE_BANK3 = [
   { id: "q83", disc: "Específicas", topic: "Ética", sub: "Presentes", level: "média", art: "Anexo II · ética / Lei 946 Art. 204", stem: "Aceitar presente de estabelecimento fiscalizado, para facilitar a liberação de banca em logradouro, ofende sobretudo:", choices: ["O dever de zelo, sigilo e primazia do interesse público, além da ética profissional do Anexo II.", "Apenas a Lei de Diretrizes Orçamentárias, em profundidade de TCU.", "O direito autoral da logomarca da banca.", "Nenhuma norma, se o valor for simbólico e não houver recibo."], answer: 0, why: "Ética profissional (Anexo II) e deveres do Art. 204 da Lei 946 (zelo, levar irregularidade à autoridade, urbanidade, sigilo). Interesse particular do fiscalizado não se sobrepõe ao público. LDO/TCU não são o fundamento imediato desta conduta de rua.", alts: ["Certo.", "Fora do recorte de profundidade do Fiscal.", "Não é o núcleo da ética funcional.", "Valor simbólico não legitima a vantagem."] }
 ];
 MORE_BANK3.forEach((q) => BANK.push(q));
+
+const MORE_BANK4 = [
+  { id: "q84", disc: "Legislação", topic: "Lei Orgânica", sub: "Competência do Município", level: "fácil", art: "LOM Tanguá, Art. 20, I", stem: "Na Lei Orgânica do Município de Tanguá, compete ao Município, entre outras atribuições:", choices: ["Legislar sobre direito penal.", "Legislar sobre assuntos de interesse local.", "Emitir moeda.", "Declarar guerra."], answer: 1, why: "Questão autoral. LOM Art. 20, I: compete ao Município legislar sobre assuntos de interesse local. Direito penal, moeda e declaração de guerra não são competência municipal.", alts: ["Competência da União.", "Certo: Art. 20, I.", "Competência da União.", "Competência da União."] },
+  { id: "q85", disc: "Legislação", topic: "Lei Orgânica", sub: "Emenda à LOM", level: "média", art: "LOM Tanguá, Art. 69, I e §1º", stem: "A Lei Orgânica de Tanguá poderá ser emendada, entre outras hipóteses, mediante proposta:", choices: ["De um terço dos vereadores, aprovada em turno único por maioria simples.", "De dois terços, no mínimo, dos membros da Câmara, votada em dois turnos com interstício mínimo de dez dias e aprovada por dois terços em cada turno.", "Apenas do Governador do Estado.", "De qualquer eleitor isoladamente, sem percentual mínimo."], answer: 1, why: "Questão autoral. LOM Art. 69, I: proposta de dois terços, no mínimo, dos vereadores. §1º: dois turnos, interstício mínimo de dez dias, aprovação por dois terços em cada turno. Também cabem proposta do Prefeito e proposta popular de 5% do eleitorado (incisos II e III).", alts: ["Quórum e rito incorretos.", "Certo: Art. 69, I e §1º.", "O Governador não figura no Art. 69.", "Iniciativa popular exige 5% do eleitorado (Art. 69, III)."] }
+];
+MORE_BANK4.forEach((q) => BANK.push(q));
 
 function regradeStoredAnswers() {
   const ans = loadAnswers();
@@ -1600,7 +1636,7 @@ function finishSim(auto) {
   paper.forEach((q, i) => {
     const ok = simState.choices[i] === q.answer;
     const w = weightOf(q.disc);
-    if (!ok) addToCaderno(q);
+    if (!ok) addToCaderno(q, simState.choices[i]);
     if (q.disc === "Português") { if (ok) pt += w; ptN += ok ? 1 : 0; }
     else if (q.disc === "Legislação") { if (ok) leg += w; legN += ok ? 1 : 0; }
     else { if (ok) esp += w; espN += ok ? 1 : 0; }
@@ -1660,18 +1696,19 @@ function addDays(ts, n) {
   return d.getTime();
 }
 
-function addToCaderno(q) {
+function addToCaderno(q, choice) {
   if (!q || !q.id) return;
   const list = loadCaderno();
   const now = Date.now();
-  const rec = loadAnswers()[q.id];
+  const rec = typeof loadAnswers === "function" ? loadAnswers()[q.id] : null;
+  const chosen = typeof choice === "number" ? choice : (rec && typeof rec.choice === "number" ? rec.choice : null);
   const found = list.find((c) => c.id === q.id);
   if (found) {
     found.misses = (found.misses || 1) + 1;
     found.last = now;
     found.due = addDays(now, 1);
     found.step = 0;
-    if (rec) found.choice = rec.choice;
+    if (chosen != null) found.choice = chosen;
     found.answer = q.answer;
   } else {
     list.unshift({
@@ -1685,7 +1722,7 @@ function addToCaderno(q) {
       last: now,
       due: addDays(now, 1),
       step: 0,
-      choice: rec ? rec.choice : null,
+      choice: chosen,
       answer: q.answer
     });
   }
