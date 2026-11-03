@@ -17,7 +17,7 @@
       document.documentElement.setAttribute("data-theme", t);
     } catch (e) {}
   </script>
-  <link rel="stylesheet" href="styles.css?v=20261103g" />
+  <link rel="stylesheet" href="styles.css?v=20261103h" />
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Ir ao conteúdo</a>
@@ -64,6 +64,7 @@
   <nav class="subnav" id="sub-praticar" hidden aria-label="Praticar">
     <button type="button" class="subtab active" data-sub="questoes">Questões</button>
     <button type="button" class="subtab" data-sub="treino">Treino rápido</button>
+    <button type="button" class="subtab" data-sub="flashcards">Flashcards</button>
   </nav>
   <nav class="subnav" id="sub-desempenho" hidden aria-label="Desempenho">
     <button type="button" class="subtab active" data-sub="pesos">Visão geral</button>
@@ -81,6 +82,7 @@
     <button class="tab active" data-panel="hoje" tabindex="-1">Início</button>
     <button class="tab" data-panel="calendario" tabindex="-1">Cronograma</button>
     <button class="tab" data-panel="questoes" tabindex="-1">Questões</button>
+    <button class="tab" data-panel="flashcards" tabindex="-1">Flashcards</button>
     <button class="tab" data-panel="simulados" tabindex="-1">Simulados</button>
     <button class="tab" data-panel="caderno" tabindex="-1">Caderno</button>
     <button class="tab" data-panel="edital" tabindex="-1">Edital</button>
@@ -127,10 +129,18 @@
       <div id="q-box"><article class="card"><h3>Carregando o banco…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
     </section>
 
+    <section id="flashcards" class="panel">
+      <div class="section-head">
+        <h2>Flashcards</h2>
+        <p>Cartões curtos para prazos, classificações e distinções. Recuperação ativa, não releitura. Não substitui o banco de questões.</p>
+      </div>
+      <div id="cards-box"></div>
+    </section>
+
     <section id="simulados" class="panel">
       <div class="section-head">
         <h2>Simulados</h2>
-        <p>Dois ensaios no formato da prova: 30 questões, 3 horas, pesos 2 / 2 / 4.</p>
+        <p>Dois ensaios no formato da prova: 30 questões, 3 horas, pesos 2 / 2 / 4. Treinos direcionados não repetem a prova oficial.</p>
       </div>
       <div id="sim-home"><article class="card"><h3>Carregando simulados…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
       <div id="sim-run" hidden></div>
@@ -299,24 +309,24 @@
     <section id="pesos" class="panel">
       <div class="section-head">
         <h2>Onde está a vaga</h2>
-        <p>30 questões · 3 horas · 4 alternativas · mínimo 40 pontos · meta 68–72. 1º desempate: específicas.</p>
+        <p>30 questões · 3 horas · 4 alternativas · mínimo 40 pontos · meta 68–72. Desempate: preferência legal (≥60 anos); depois específicas, português, legislação e maior idade.</p>
       </div>
       <div id="stats-live"></div>
       <div class="bars">
         <div class="bar-row">
           <div class="bar-meta"><span>Conhecimentos Específicos</span><b>40 pts</b></div>
           <div class="bar"><i style="width:50%"></i></div>
-          <p>10 questões × peso 4. Admin, Constitucional (noções), Ética, Informática, Atribuições. 1º critério de desempate.</p>
+          <p>10 questões × peso 4. Admin, Constitucional (noções), Ética, Informática, Atribuições. Após a preferência legal (≥60 anos), é o 1º critério de desempate por nota.</p>
         </div>
         <div class="bar-row">
           <div class="bar-meta"><span>Língua Portuguesa</span><b>20 pts</b></div>
           <div class="bar"><i style="width:25%"></i></div>
-          <p>10 questões × peso 2. Interpretação decide. O Anexo II também cobra fonologia/fonética, morfologia, sintaxe (crase, concordância, regência), semântica e figuras. 2º desempate.</p>
+          <p>10 questões × peso 2. Interpretação decide. O Anexo II também cobra fonologia/fonética, morfologia, sintaxe (crase, concordância, regência), semântica e figuras. 2º critério de desempate por nota, depois da preferência legal.</p>
         </div>
         <div class="bar-row">
           <div class="bar-meta"><span>Legislação Municipal</span><b>20 pts</b></div>
           <div class="bar"><i style="width:25%"></i></div>
-          <p>10 questões × peso 2. Lei 946/2014 e Lei Orgânica de Tanguá. Prazos, competências, vedações, quóruns.</p>
+          <p>10 questões × peso 2. Lei 946/2014 e Lei Orgânica de Tanguá. Prazos, competências, vedações, quóruns. 3º critério de desempate por nota; persistindo, maior idade.</p>
         </div>
       </div>
       <div class="grid-3">
@@ -526,7 +536,7 @@
       </div>
     </div>
   </div>
-  <script src="app.js?v=20261103g"></script>
-  <script src="dia.js?v=20261103g"></script>
+  <script src="app.js?v=20261103h"></script>
+  <script src="dia.js?v=20261103h"></script>
 </body>
 </html>
