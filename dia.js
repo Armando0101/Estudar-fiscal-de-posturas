@@ -254,11 +254,12 @@ function statusLabel(s) {
 function openPanel(name) {
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.panel === name));
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
+  if (typeof syncNav === "function") syncNav(name);
 }
 
 function openDia(id) {
   if (location.hash !== "#dia-" + id) location.hash = "dia-" + id;
-  else renderDiaPage(id);
+  renderDiaPage(id);
 }
 
 function renderDiaPage(id) {
@@ -541,27 +542,20 @@ renderToday = function () {
   if (!el) return;
   const id = todayIso();
   const day = DAYS.find((d) => d.id === id) || DAYS[0];
-  const idx = DAYS.findIndex((d) => d.id === day.id);
-  const next = DAYS[idx + 1];
   const p = dayProgress(day.id);
-  const mission = document.createElement("article");
-  mission.className = "card good";
-  mission.innerHTML = `
-    <p class="phase">Sua missão de hoje</p>
-    <h2>${day.date} · ${day.title}</h2>
-    <p>${(DAY_PLAN[day.id] && DAY_PLAN[day.id].goal) || day.tag}</p>
-    <div class="prog"><i style="width:${p.pct}%"></i></div>
-    <p class="tree-meta">Progresso de hoje: ${p.pct}%</p>
-    <div class="q-nav">
-      <button type="button" class="btn gold" id="open-today-plan">Abrir meu plano de estudos de hoje</button>
-      ${next ? `<button type="button" class="btn" id="open-next-plan">Próximo dia</button>` : ""}
-    </div>
-  `;
-  el.insertBefore(mission, el.firstChild);
-  const btn = document.getElementById("open-today-plan");
-  if (btn) btn.addEventListener("click", () => openDia(day.id));
-  const btnN = document.getElementById("open-next-plan");
-  if (btnN && next) btnN.addEventListener("click", () => openDia(next.id));
+  const plan = DAY_PLAN[day.id];
+  const nextStep = el.querySelector(".next-step");
+  if (nextStep && plan && plan.goal && !nextStep.querySelector(".day-goal")) {
+    const g = document.createElement("p");
+    g.className = "day-goal";
+    g.textContent = plan.goal;
+    const h2 = nextStep.querySelector("h2");
+    if (h2) h2.insertAdjacentElement("afterend", g);
+  }
+  const prog = el.querySelector(".next-step .prog i");
+  if (prog) prog.style.width = p.pct + "%";
+  const meta = el.querySelector(".next-step .tree-meta");
+  if (meta) meta.textContent = day.hours + " previstos · progresso de hoje: " + p.pct + "%";
 };
 
 const _collectBackupOrig = collectBackup;

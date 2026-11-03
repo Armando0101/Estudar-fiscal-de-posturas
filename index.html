@@ -8,50 +8,79 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600;700&display=swap" rel="stylesheet" />
   <meta http-equiv="Cache-Control" content="no-store" />
-  <link rel="stylesheet" href="styles.css?v=20261103a" />
+  <link rel="stylesheet" href="styles.css?v=20261103b" />
 </head>
 <body>
-  <div class="bg-grid"></div>
+  <a class="skip-link" href="#conteudo">Ir ao conteúdo</a>
   <header class="top">
     <div class="brand">
-      <p class="kicker">Concurso Tanguá · IBDO · 22/11/2026</p>
+      <p class="kicker">Tanguá/RJ · Banca IBDO · 22/11/2026</p>
       <h1>Fiscal de Posturas</h1>
-      <p class="sub">Cronograma recalibrado a partir de 02/11. Menos volume, mais acerto. Código 101 · 2 vagas AC · ensino médio.</p>
+      <p class="sub">Código 101 · 2 vagas AC · ensino médio</p>
     </div>
-    <div class="countdown" id="countdown">
+    <div class="countdown" id="countdown" aria-live="polite">
       <div class="count-num" id="daysLeft">--</div>
       <div class="count-label">dias até a prova</div>
     </div>
   </header>
 
   <div class="backup-bar">
-    <span>Progresso salvo neste navegador e neste aparelho. Checkboxes antigos continuam valendo. Trocar de celular ou de Chrome para Safari exige exportar e importar o backup.</span>
+    <span>Progresso neste navegador. Ao trocar de aparelho, exporte e importe o backup.</span>
     <div class="backup-actions">
       <button type="button" id="btn-export">Exportar backup</button>
       <label class="file-btn">Importar<input type="file" id="btn-import" accept="application/json" /></label>
     </div>
   </div>
 
-  <nav class="tabs" id="tabs">
-    <button class="tab active" data-panel="hoje">Início</button>
-    <button class="tab" data-panel="calendario">Cronograma</button>
-    <button class="tab" data-panel="questoes">Questões</button>
-    <button class="tab" data-panel="simulados">Simulados</button>
-    <button class="tab" data-panel="caderno">Caderno</button>
-    <button class="tab" data-panel="edital">Edital</button>
-    <button class="tab" data-panel="materiais">Materiais</button>
-    <button class="tab" data-panel="metodo">O que mudou</button>
-    <button class="tab" data-panel="pesos">Estatísticas</button>
-    <button class="tab" data-panel="prazos">Prazos Lei 946</button>
+  <nav class="nav-main" aria-label="Seções principais">
+    <button type="button" class="nav-btn active" data-nav="hoje">Início</button>
+    <button type="button" class="nav-btn" data-nav="calendario">Cronograma</button>
+    <button type="button" class="nav-btn" data-nav="praticar">Praticar</button>
+    <button type="button" class="nav-btn" data-nav="simulados">Simulados</button>
+    <button type="button" class="nav-btn" data-nav="desempenho">Desempenho</button>
+    <button type="button" class="nav-btn" data-nav="conteudos">Conteúdos</button>
+    <div class="nav-more">
+      <button type="button" class="nav-btn" id="btn-mais" data-nav="mais" aria-expanded="false" aria-haspopup="true">Mais</button>
+      <div class="nav-more-menu" id="mais-menu" hidden>
+        <button type="button" data-go-panel="metodo">O que mudou</button>
+      </div>
+    </div>
+  </nav>
+  <nav class="subnav" id="sub-praticar" hidden aria-label="Praticar">
+    <button type="button" class="subtab active" data-sub="questoes">Questões</button>
+    <button type="button" class="subtab" data-sub="treino">Treino rápido</button>
+  </nav>
+  <nav class="subnav" id="sub-desempenho" hidden aria-label="Desempenho">
+    <button type="button" class="subtab active" data-sub="pesos">Visão geral</button>
+    <button type="button" class="subtab" data-sub="caderno">Caderno de erros</button>
+    <button type="button" class="subtab" data-sub="revisoes">Revisões</button>
+  </nav>
+  <nav class="subnav" id="sub-conteudos" hidden aria-label="Conteúdos">
+    <button type="button" class="subtab active" data-sub="edital">Edital</button>
+    <button type="button" class="subtab" data-sub="materiais">Materiais</button>
+    <button type="button" class="subtab" data-sub="prazos">Prazos Lei 946</button>
   </nav>
 
-  <main>
+  <nav class="tabs tabs-legacy" id="tabs" aria-hidden="true">
+    <button class="tab active" data-panel="hoje" tabindex="-1">Início</button>
+    <button class="tab" data-panel="calendario" tabindex="-1">Cronograma</button>
+    <button class="tab" data-panel="questoes" tabindex="-1">Questões</button>
+    <button class="tab" data-panel="simulados" tabindex="-1">Simulados</button>
+    <button class="tab" data-panel="caderno" tabindex="-1">Caderno</button>
+    <button class="tab" data-panel="edital" tabindex="-1">Edital</button>
+    <button class="tab" data-panel="materiais" tabindex="-1">Materiais</button>
+    <button class="tab" data-panel="metodo" tabindex="-1">O que mudou</button>
+    <button class="tab" data-panel="pesos" tabindex="-1">Estatísticas</button>
+    <button class="tab" data-panel="prazos" tabindex="-1">Prazos Lei 946</button>
+  </nav>
+
+  <main id="conteudo">
     <section id="hoje" class="panel active"></section>
 
     <section id="calendario" class="panel">
       <div class="section-head">
-        <h2>20 dias restantes</h2>
-        <p>Marque o que concluir. O progresso fica salvo neste navegador.</p>
+        <h2>Cronograma</h2>
+        <p>Cada dia: data, disciplinas, atividades e progresso. Abra um dia para estudar só aquele conteúdo.</p>
       </div>
       <div class="filters">
         <button class="chip active" data-filter="all">Tudo</button>
@@ -72,7 +101,7 @@
     <section id="questoes" class="panel">
       <div class="section-head">
         <h2>Banco de treino IBDO</h2>
-        <p>Questões originais de treino, 4 alternativas, estilo IBDO. Não são oficiais. Toda errada vai ao caderno.</p>
+        <p>Questões de treino, 4 alternativas, estilo IBDO. Não são oficiais. Toda errada vai ao caderno.</p>
       </div>
       <div id="q-overview" class="q-overview"></div>
       <div class="filters" id="q-filters"></div>
@@ -83,8 +112,8 @@
 
     <section id="simulados" class="panel">
       <div class="section-head">
-        <h2>Simulados no formato da prova</h2>
-        <p>30 questões · 3 horas · PT peso 2 · Legislação peso 2 · Específicas peso 4 · mínimo 40 / 80.</p>
+        <h2>Simulados</h2>
+        <p>Dois ensaios no formato da prova: 30 questões, 3 horas, pesos 2 / 2 / 4.</p>
       </div>
       <div id="sim-home"><article class="card"><h3>Carregando simulados…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
       <div id="sim-run" hidden></div>
@@ -104,8 +133,9 @@
         <p>Marque o que já estudou. Código de Posturas (Lei 657/2007) é complementar: não está no Anexo II.</p>
       </div>
       <div id="edital-tree"></div>
-      <article class="card">
-        <h3>Na prática: o trabalho do Fiscal de Posturas</h3>
+      <details class="adv-filters">
+        <summary>Na prática: o trabalho do Fiscal de Posturas (Anexo I)</summary>
+        <article class="card" style="margin-top:12px;box-shadow:none">
         <p>Texto do Anexo I. Não confundir atribuição com conteúdo programático.</p>
         <ul class="practice">
           <li><b>Licença comercial.</b> Estabelecimento funcionando sem licença: verificar regularidade do licenciamento da atividade, lavrar o que a chefia determinar, relatar irregularidade. Não é Fiscal de Tributos nem de Meio Ambiente.</li>
@@ -120,11 +150,14 @@
           <li><b>Denúncia.</b> Sindicância especial para instruir processo; relatório periódico à chefia.</li>
         </ul>
       </article>
-      <article class="card warn">
-        <h3>Material complementar · Lei 657/2007</h3>
+      </details>
+      <details class="adv-filters">
+        <summary>Material complementar · Lei 657/2007</summary>
+        <article class="card warn" style="margin-top:12px;box-shadow:none">
         <p>O Código de Posturas ajuda a entender a função, mas <b>não</b> é disciplina do Anexo II. Use só se sobrar tempo depois de Lei 946, LOM, atos, CF 1º–5º / 29–31 / 37–41 e informática.</p>
         <p><a href="https://tangua.rj.gov.br/wp-content/uploads/2025/10/Lei-0657-2007.pdf" target="_blank" rel="noopener">PDF oficial · Lei 657/2007</a></p>
       </article>
+      </details>
     </section>
 
     <section id="materiais" class="panel">
@@ -468,7 +501,7 @@
       </div>
     </div>
   </div>
-  <script src="app.js?v=20261103a"></script>
-  <script src="dia.js?v=20261103a"></script>
+  <script src="app.js?v=20261103b"></script>
+  <script src="dia.js?v=20261103b"></script>
 </body>
 </html>
