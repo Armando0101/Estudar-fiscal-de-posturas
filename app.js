@@ -334,6 +334,55 @@ try {
   if (dl) dl.textContent = Math.max(daysUntilExam(), 0);
 } catch (_) {}
 
+let uiGroup = "hoje";
+let uiPraticar = "questoes";
+let uiDesempenho = "pesos";
+let uiConteudos = "edital";
+let qDetailOpen = false;
+let wantDrill = false;
+
+function panelGroup(name) {
+  if (name === "dia") return "calendario";
+  if (name === "hoje" || name === "calendario" || name === "simulados" || name === "metodo") return name;
+  if (name === "questoes") return "praticar";
+  if (name === "caderno" || name === "pesos") return "desempenho";
+  if (name === "edital" || name === "materiais" || name === "prazos") return "conteudos";
+  return name;
+}
+
+function syncNav(name) {
+  uiGroup = panelGroup(name);
+  if (name === "questoes") uiPraticar = wantDrill ? "treino" : "questoes";
+  if (name === "caderno") uiDesempenho = uiDesempenho === "revisoes" ? "revisoes" : "caderno";
+  if (name === "pesos") uiDesempenho = "pesos";
+  if (name === "edital" || name === "materiais" || name === "prazos") uiConteudos = name;
+  document.querySelectorAll(".nav-btn[data-nav]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.nav === uiGroup || (uiGroup === "metodo" && b.dataset.nav === "mais"));
+  });
+  const subP = document.getElementById("sub-praticar");
+  const subD = document.getElementById("sub-desempenho");
+  const subC = document.getElementById("sub-conteudos");
+  if (subP) subP.hidden = uiGroup !== "praticar";
+  if (subD) subD.hidden = uiGroup !== "desempenho";
+  if (subC) subC.hidden = uiGroup !== "conteudos";
+  document.querySelectorAll("#sub-praticar .subtab").forEach((b) => b.classList.toggle("active", b.dataset.sub === uiPraticar));
+  document.querySelectorAll("#sub-desempenho .subtab").forEach((b) => b.classList.toggle("active", b.dataset.sub === uiDesempenho));
+  document.querySelectorAll("#sub-conteudos .subtab").forEach((b) => b.classList.toggle("active", b.dataset.sub === uiConteudos));
+  const mais = document.getElementById("mais-menu");
+  const btnMais = document.getElementById("btn-mais");
+  if (mais && uiGroup !== "metodo") { mais.hidden = true; if (btnMais) btnMais.setAttribute("aria-expanded", "false"); }
+}
+
+function goPanel(name) {
+  const tab = document.querySelector('.tab[data-panel="' + name + '"]');
+  if (tab) tab.click();
+  else {
+    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.panel === name));
+    document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
+  }
+  syncNav(name);
+}
+
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
@@ -341,6 +390,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     btn.classList.add("active");
     const panel = document.getElementById(btn.dataset.panel);
     if (panel) panel.classList.add("active");
+    syncNav(btn.dataset.panel);
     try {
       if (btn.dataset.panel === "hoje" && typeof renderToday === "function") renderToday();
       if (btn.dataset.panel === "questoes" && typeof renderQuestoes === "function") renderQuestoes();
@@ -356,6 +406,60 @@ document.querySelectorAll(".tab").forEach((btn) => {
       }
     }
   });
+});
+
+document.querySelectorAll(".nav-btn[data-nav]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const n = btn.dataset.nav;
+    if (n === "mais") {
+      const menu = document.getElementById("mais-menu");
+      if (!menu) return;
+      menu.hidden = !menu.hidden;
+      btn.setAttribute("aria-expanded", menu.hidden ? "false" : "true");
+      return;
+    }
+    wantDrill = false;
+    if (n === "praticar") { uiPraticar = "questoes"; goPanel("questoes"); return; }
+    if (n === "desempenho") { uiDesempenho = "pesos"; goPanel("pesos"); return; }
+    if (n === "conteudos") { uiConteudos = "edital"; goPanel("edital"); return; }
+    goPanel(n);
+  });
+});
+document.querySelectorAll("#sub-praticar .subtab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    uiPraticar = btn.dataset.sub;
+    if (uiPraticar === "treino") { wantDrill = true; goPanel("questoes"); }
+    else { wantDrill = false; drill = null; goPanel("questoes"); }
+  });
+});
+document.querySelectorAll("#sub-desempenho .subtab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    uiDesempenho = btn.dataset.sub;
+    if (uiDesempenho === "pesos") goPanel("pesos");
+    else {
+      if (typeof cadFilter !== "undefined") cadFilter = uiDesempenho === "revisoes" ? "due" : "all";
+      goPanel("caderno");
+    }
+  });
+});
+document.querySelectorAll("#sub-conteudos .subtab").forEach((btn) => {
+  btn.addEventListener("click", () => goPanel(btn.dataset.sub));
+});
+const maisMenu = document.getElementById("mais-menu");
+if (maisMenu) {
+  maisMenu.querySelectorAll("[data-go-panel]").forEach((b) => {
+    b.addEventListener("click", () => { maisMenu.hidden = true; goPanel(b.dataset.goPanel); });
+  });
+}
+document.addEventListener("click", (ev) => {
+  const wrap = document.querySelector(".nav-more");
+  const menu = document.getElementById("mais-menu");
+  if (!wrap || !menu || menu.hidden) return;
+  if (!wrap.contains(ev.target)) {
+    menu.hidden = true;
+    const bm = document.getElementById("btn-mais");
+    if (bm) bm.setAttribute("aria-expanded", "false");
+  }
 });
 
 function dashStats() {
@@ -398,43 +502,43 @@ function renderToday() {
   const doneCount = DAYS.filter((d) => done[d.id]).length;
   const dsh = dashStats();
   const el = document.getElementById("hoje");
+  const tasks = (day.blocks || []).map((b) => (b.when.split("·")[1] || b.when).trim());
   el.innerHTML = `
-    <div class="dash">
-      <div class="stat"><b>${dsh.pct}%</b><span>acertos no banco (${dsh.okN}/${dsh.answered || 0})</span></div>
-      <div class="stat"><b>${dsh.hours}h</b><span>blocos concluídos × 50 min</span></div>
-      <div class="stat"><b>${dsh.due}</b><span>revisões do caderno hoje</span></div>
-      <div class="stat"><b>${dsh.sims.length ? dsh.sims[0].score + "/80" : "—"}</b><span>último simulado · ponto fraco: ${dsh.weakName}</span></div>
-    </div>
-    <div class="today-hero">
-      <article class="card">
-        <p class="phase">${day.phase}</p>
-        <h2 style="font-size:30px;margin:8px 0 6px">${day.title}</h2>
-        <p>${day.date} · ${day.tag}${day.note ? " · " + day.note : ""}</p>
-        ${day.tip ? `<p style="margin-top:10px">${day.tip}</p>` : ""}
-      </article>
-      <div>
-        <div class="stat"><b>${day.hours}</b><span>volume de hoje</span></div>
-        <div class="stat"><b>${remaining}</b><span>dias de estudo pela frente</span></div>
-        <div class="stat"><b>${doneCount}/${DAYS.length}</b><span>dias concluídos</span></div>
+    <article class="card next-step">
+      <p class="phase">Seu próximo passo</p>
+      <h2>${day.date} · ${day.title}</h2>
+      <p>${day.tag}${day.note ? " · " + day.note : ""}</p>
+      <p>${tasks.length ? "<b>Disciplinas:</b> " + tasks.join(" · ") : ""}</p>
+      <div class="prog"><i style="width:${Math.round(doneCount * 100 / DAYS.length)}%"></i></div>
+      <p class="tree-meta">${day.hours} previstos · ${remaining} dias de estudo pela frente</p>
+      <div class="q-nav">
+        <button type="button" class="btn primary" id="home-start">Começar a estudar</button>
       </div>
+    </article>
+    <div class="dash dash-3">
+      <div class="stat"><b>${doneCount}/${DAYS.length}</b><span>progresso do cronograma</span></div>
+      <div class="stat"><b>${dsh.answered}</b><span>questões respondidas · ${dsh.pct}% de acerto</span></div>
+      <div class="stat"><b>${dsh.due}</b><span>revisões pendentes hoje</span></div>
     </div>
-    <div class="blocks">
-      ${day.blocks.map((b, i) => `
-        <div class="block">
-          <div class="when">${b.when}</div>
-          <h3>Bloco ${i + 1}</h3>
-          <p>${b.text}</p>
-          <label class="check">
-            <input type="checkbox" data-block="${day.id}-${i}" ${lsGet("b-" + day.id + "-" + i) === "1" ? "checked" : ""}/>
-            Concluído
-          </label>
-        </div>
-      `).join("")}
+    <p class="phase" style="margin:4px 0 8px">Acesso rápido</p>
+    <div class="quick-actions">
+      <button type="button" class="btn" data-home="calendario">Continuar cronograma</button>
+      <button type="button" class="btn" data-home="questoes">Resolver questões</button>
+      <button type="button" class="btn" data-home="treino">Fazer treino rápido</button>
+      <button type="button" class="btn" data-home="caderno">Caderno de erros</button>
     </div>
   `;
-  el.querySelectorAll("input[data-block]").forEach((input) => {
-    input.addEventListener("change", () => {
-      lsSet("b-" + input.dataset.block, input.checked ? "1" : "0");
+  const start = document.getElementById("home-start");
+  if (start) start.addEventListener("click", () => {
+    if (typeof openDia === "function") openDia(day.id);
+    else goPanel("calendario");
+  });
+  el.querySelectorAll("[data-home]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const t = b.dataset.home;
+      if (t === "treino") { wantDrill = true; goPanel("questoes"); }
+      else if (t === "caderno") { uiDesempenho = "caderno"; goPanel("caderno"); }
+      else goPanel(t);
     });
   });
 }
@@ -642,23 +746,12 @@ function renderEdital() {
       if (!item) return;
       qFilter = item.disc === "Língua Portuguesa" ? "Português" : item.disc === "Legislação" ? "Legislação" : "Específicas";
       qIndex = 0;
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      const tab = document.querySelector('.tab[data-panel="questoes"]');
-      if (tab) tab.classList.add("active");
-      const panel = document.getElementById("questoes");
-      if (panel) panel.classList.add("active");
-      renderQuestoes();
+      goPanel("questoes");
     });
   });
   box.querySelectorAll("button[data-gom]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      const tab = document.querySelector('.tab[data-panel="materiais"]');
-      if (tab) tab.classList.add("active");
-      const panel = document.getElementById("materiais");
-      if (panel) panel.classList.add("active");
+      goPanel("materiais");
     });
   });
 }
@@ -856,36 +949,44 @@ function confirmWipeAnswers() {
 function paintQOverview() {
   const el = document.getElementById("q-overview");
   if (!el) return;
+  if (wantDrill || drill) { el.innerHTML = ""; return; }
   const g = answerStats();
   const discs = discStats();
   const topics = topicStats(2);
   el.innerHTML = `
-    <div class="dash q-dash">
-      <div class="stat"><b>${g.total}</b><span>no banco</span></div>
+    <div class="dash dash-3">
       <div class="stat"><b>${g.done}</b><span>respondidas</span></div>
       <div class="stat"><b>${g.ok}</b><span>acertos</span></div>
-      <div class="stat"><b>${g.bad}</b><span>erros</span></div>
-      <div class="stat"><b>${g.pct}%</b><span>acerto (só respondidas)</span></div>
-      <div class="stat"><b>${g.open}</b><span>ainda abertas</span></div>
+      <div class="stat"><b>${g.pct}%</b><span>aproveitamento</span></div>
     </div>
-    <div class="disc-bars">
-      ${discs.map((d) => `<div class="bar-row"><div class="bar-meta"><span>${d.disc}</span><b>${d.done ? d.pct + "%" : "—"} · ${d.ok}/${d.done || 0}</b></div><div class="bar"><i style="width:${d.done ? d.pct : 0}%"></i></div></div>`).join("")}
-    </div>
-    ${topics.length ? `<div class="topic-bars">${topics.slice(0, 6).map((t) => `<div class="bar-row"><div class="bar-meta"><span>${t.key}</span><b>${t.pct}% · ${t.ok}/${t.n}</b></div><div class="bar"><i style="width:${t.pct}%"></i></div></div>`).join("")}</div>` : ""}
+    <details class="adv-filters" ${qDetailOpen ? "open" : ""} id="q-detail">
+      <summary>Ver desempenho detalhado</summary>
+      <div class="dash q-dash">
+        <div class="stat"><b>${g.total}</b><span>no banco</span></div>
+        <div class="stat"><b>${g.bad}</b><span>erros</span></div>
+        <div class="stat"><b>${g.open}</b><span>ainda abertas</span></div>
+      </div>
+      <div class="disc-bars">
+        ${discs.map((d) => `<div class="bar-row"><div class="bar-meta"><span>${d.disc}</span><b>${d.done ? d.pct + "%" : "—"} · ${d.ok}/${d.done || 0}</b></div><div class="bar"><i style="width:${d.done ? d.pct : 0}%"></i></div></div>`).join("")}
+      </div>
+      ${topics.length ? `<div class="topic-bars">${topics.slice(0, 6).map((t) => `<div class="bar-row"><div class="bar-meta"><span>${t.key}</span><b>${t.pct}% · ${t.ok}/${t.n}</b></div><div class="bar"><i style="width:${t.pct}%"></i></div></div>`).join("")}</div>` : ""}
+    </details>
     <div class="q-toolbar">
       <button type="button" class="btn wipe" id="btn-reset-answers">Redefinir marcações</button>
-      <button type="button" class="btn gold" id="btn-drill">Treino rápido</button>
     </div>
   `;
+  const det = document.getElementById("q-detail");
+  if (det) det.addEventListener("toggle", () => { qDetailOpen = det.open; });
   const rst = document.getElementById("btn-reset-answers");
   if (rst) rst.addEventListener("click", confirmWipeAnswers);
-  const dr = document.getElementById("btn-drill");
-  if (dr) dr.addEventListener("click", openDrillSetup);
 }
 
 function openDrillSetup() {
   const box = document.getElementById("q-box");
   if (!box) return;
+  wantDrill = true;
+  uiPraticar = "treino";
+  syncNav("questoes");
   box.innerHTML = `
     <article class="card">
       <h3>Treino rápido</h3>
@@ -905,7 +1006,7 @@ function openDrillSetup() {
         <button type="button" class="chip" data-ds="review">Marcadas para revisão</button>
       </div>
       <div class="q-nav">
-        <button type="button" class="btn gold" id="drill-go">Iniciar treino</button>
+        <button type="button" class="btn primary" id="drill-go">Iniciar treino</button>
         <button type="button" class="btn" id="drill-cancel">Voltar ao banco</button>
       </div>
     </article>
@@ -921,7 +1022,7 @@ function openDrillSetup() {
     b.classList.add("active");
     src = b.dataset.ds;
   }));
-  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; renderQuestoes(); });
+  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; wantDrill = false; uiPraticar = "questoes"; renderQuestoes(); syncNav("questoes"); });
   document.getElementById("drill-go").addEventListener("click", () => startDrill(n, src));
 }
 
@@ -1003,7 +1104,7 @@ function finishDrill() {
   `;
   drill = null;
   document.getElementById("drill-again").addEventListener("click", openDrillSetup);
-  document.getElementById("drill-back").addEventListener("click", () => { renderQuestoes(); });
+  document.getElementById("drill-back").addEventListener("click", () => { wantDrill = false; uiPraticar = "questoes"; renderQuestoes(); syncNav("questoes"); });
 }
 
 function renderQuestoes() {
@@ -1011,23 +1112,38 @@ function renderQuestoes() {
   const stats = document.getElementById("q-stats");
   const filters = document.getElementById("q-filters");
   if (!box || !stats || !filters) return;
+  if (wantDrill && !drill) { paintQOverview(); filters.innerHTML = ""; stats.innerHTML = ""; openDrillSetup(); return; }
   paintQOverview();
   const ans = loadAnswers();
   const rev = loadReview();
+  if (drill) {
+    filters.innerHTML = "";
+    stats.innerHTML = "";
+  } else {
   const discs = ["all", "Português", "Legislação", "Específicas"];
   const levels = ["all", "fácil", "média", "difícil"];
   const topics = ["all"].concat(Array.from(new Set(BANK.filter((q) => qFilter === "all" || q.disc === qFilter).map((q) => q.topic))).sort());
   if (qTopic !== "all" && topics.indexOf(qTopic) < 0) qTopic = "all";
   const esc = (s) => String(s || "").replace(/"/g, "&quot;");
-  filters.innerHTML = discs.map((d) => `<button type="button" class="chip ${qFilter === d ? "active" : ""}" data-qd="${d}">${d === "all" ? "Todas" : d}</button>`).join("") +
-    levels.map((lv) => `<button type="button" class="chip ${qLevel === lv ? "active" : ""}" data-ql="${lv}">${lv === "all" ? "Qualquer nível" : lv}</button>`).join("") +
-    `<button type="button" class="chip ${qMode === "all" ? "active" : ""}" data-qm="all">Todas as situações</button>` +
-    `<button type="button" class="chip ${qMode === "open" ? "active" : ""}" data-qm="open">Não respondidas</button>` +
-    `<button type="button" class="chip ${qMode === "ok" ? "active" : ""}" data-qm="ok">Corretas</button>` +
-    `<button type="button" class="chip ${qMode === "wrong" ? "active" : ""}" data-qm="wrong">Erradas</button>` +
-    `<button type="button" class="chip ${qMode === "review" ? "active" : ""}" data-qm="review">Para revisão</button>` +
-    `<label class="file-btn">Assunto <select id="q-topic">${topics.map((t) => `<option value="${t}" ${qTopic === t ? "selected" : ""}>${t === "all" ? "Todos os assuntos" : t}</option>`).join("")}</select></label>` +
-    `<label class="file-btn q-search-lab">Pesquisar <input type="search" id="q-search" value="${esc(qSearch)}" placeholder="enunciado, assunto ou artigo" /></label>`;
+  const advOpen = !!(qTopic !== "all" || qLevel !== "all" || qMode === "review");
+  filters.innerHTML = `
+    <label class="search-field">Pesquisar<input type="search" id="q-search" value="${esc(qSearch)}" placeholder="enunciado, assunto ou artigo" /></label>
+    <div class="filter-primary">
+      <div class="filter-group"><span class="filter-label">Disciplina</span>${discs.map((d) => `<button type="button" class="chip ${qFilter === d ? "active" : ""}" data-qd="${d}">${d === "all" ? "Todas" : d}</button>`).join("")}</div>
+      <div class="filter-group"><span class="filter-label">Situação</span>
+        <button type="button" class="chip ${qMode === "all" ? "active" : ""}" data-qm="all">Todas</button>
+        <button type="button" class="chip ${qMode === "open" ? "active" : ""}" data-qm="open">Não respondidas</button>
+        <button type="button" class="chip ${qMode === "ok" ? "active" : ""}" data-qm="ok">Corretas</button>
+        <button type="button" class="chip ${qMode === "wrong" ? "active" : ""}" data-qm="wrong">Erradas</button>
+      </div>
+    </div>
+    <details class="adv-filters" ${advOpen ? "open" : ""}>
+      <summary>Filtros avançados</summary>
+      <div class="filter-group" style="margin-top:10px"><span class="filter-label">Dificuldade</span>${levels.map((lv) => `<button type="button" class="chip ${qLevel === lv ? "active" : ""}" data-ql="${lv}">${lv === "all" ? "Qualquer nível" : lv}</button>`).join("")}</div>
+      <div class="filter-group" style="margin-top:10px"><span class="filter-label">Revisão</span><button type="button" class="chip ${qMode === "review" ? "active" : ""}" data-qm="review">Marcadas para revisão</button></div>
+      <label class="search-field" style="margin-top:10px">Assunto <select id="q-topic">${topics.map((t) => `<option value="${t}" ${qTopic === t ? "selected" : ""}>${t === "all" ? "Todos os assuntos" : t}</option>`).join("")}</select></label>
+    </details>
+  `;
   filters.querySelectorAll("button[data-qd]").forEach((btn) => {
     btn.addEventListener("click", () => { qFilter = btn.dataset.qd; qIndex = 0; qPick = null; qTopic = "all"; renderQuestoes(); });
   });
@@ -1053,9 +1169,10 @@ function renderQuestoes() {
       }, 220);
     });
   }
+  }
   const list = bankList();
   const g = answerStats();
-  stats.innerHTML = `<span class="pill">Treino · não oficiais</span><span class="pill">${g.total} no banco</span><span class="pill">${g.done} respondidas</span><span class="pill">${g.ok} certas · ${g.pct}%</span><span class="pill">${g.bad} erros</span><span class="pill">${list.length} neste filtro</span>`;
+  if (!drill) stats.innerHTML = `<span class="pill">${list.length} neste filtro</span><span class="pill">Treino · não oficiais</span>`;
   if (drill) {
     if (drill.i >= drill.ids.length) { finishDrill(); return; }
     const q = BANK.find((x) => x.id === drill.ids[drill.i]);
@@ -1075,10 +1192,10 @@ function renderQuestoes() {
           } else if (pick === i) cls += " sel";
           return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}>${letter}) ${c}</button>`;
         }).join("")}
-        ${!rec ? `<div class="q-nav"><button type="button" class="btn gold" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
+        ${!rec ? `<div class="q-nav q-actions-main"><button type="button" class="btn primary" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
         ${rec ? feedbackHtml(q, rec) : ""}
-        <div class="q-nav">
-          ${rec ? `<button type="button" class="btn gold" id="drill-next">${drill.i + 1 >= drill.ids.length ? "Ver relatório" : "Próxima"}</button>` : ""}
+        <div class="q-nav q-actions-sec">
+          ${rec ? `<button type="button" class="btn primary" id="drill-next">${drill.i + 1 >= drill.ids.length ? "Ver relatório" : "Próxima"}</button>` : ""}
           <button type="button" class="btn" id="q-flag">${rev[q.id] ? "Remover da revisão" : "Marcar para revisão"}</button>
           <button type="button" class="btn" id="drill-abort">Encerrar treino</button>
         </div>
@@ -1118,16 +1235,16 @@ function renderQuestoes() {
         } else if (pick === i) cls += " sel";
         return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}><span class="q-letter">${letter}</span> ${c}${rec && i === q.answer ? " <span class='q-mark'>correta</span>" : ""}${rec && i === rec.choice && !rec.ok ? " <span class='q-mark bad'>sua resposta</span>" : ""}</button>`;
       }).join("")}
-      ${!rec ? `<div class="q-nav"><button type="button" class="btn gold" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
+      ${!rec ? `<div class="q-nav q-actions-main"><button type="button" class="btn primary" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
       ${rec ? feedbackHtml(q, rec) : ""}
-      <div class="q-nav">
+      <div class="q-nav q-actions-sec">
         <button type="button" class="btn" id="q-prev">Anterior</button>
         <button type="button" class="btn" id="q-next">Próxima</button>
         <button type="button" class="btn" id="q-flag">${rev[q.id] ? "Remover da revisão" : "Marcar para revisão"}</button>
       </div>
     </article>
-    <article class="card">
-      <h3>Lista deste filtro (${list.length})</h3>
+     <details class="adv-filters">
+      <summary>Lista deste filtro (${list.length})</summary>
       <ul class="q-list">
         ${list.map((item, i) => {
           const a = ans[item.id];
@@ -1135,7 +1252,7 @@ function renderQuestoes() {
           return `<li><button type="button" class="btn" data-jump="${i}">${item.id}</button> ${item.disc} · ${item.topic} · ${st}${rev[item.id] ? " · revisão" : ""}</li>`;
         }).join("")}
       </ul>
-    </article>
+    </details>
   `;
   box.querySelectorAll("button[data-jump]").forEach((btn) => {
     btn.addEventListener("click", () => { qIndex = Number(btn.dataset.jump); qPick = null; renderQuestoes(); });
@@ -1149,8 +1266,8 @@ function renderQuestoes() {
 
 function feedbackHtml(q, rec) {
   const head = rec.ok ? "Certo." : "Errado.";
-  const alts = q.alts ? `<p class="explain">${q.choices.map((_, i) => "<b>" + "ABCD"[i] + "</b>: " + q.alts[i]).join("<br>")}</p>` : "";
-  return `<p class="explain"><b>${head}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p><p class="explain"><b>Fundamento:</b> ${q.art}.</p>${alts}`;
+  const alts = q.alts ? `<details class="adv-filters" style="margin-top:10px"><summary>Ver explicação das alternativas</summary><p class="explain">${q.choices.map((_, i) => "<b>" + "ABCD"[i] + "</b>: " + q.alts[i]).join("<br>")}</p></details>` : "";
+  return `<div class="q-feedback"><p class="explain"><b>${head}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p><details class="adv-filters"><summary>Ver fundamento</summary><p class="explain"><b>Fundamento:</b> ${q.art}.</p></details>${alts}</div>`;
 }
 
 function bindQuestionCard(box, q, rec) {
@@ -1311,18 +1428,28 @@ function renderSimHome() {
     return "não iniciado";
   }
   home.innerHTML = `
+    <div class="sim-grid">
+      <article class="card sim-card">
+        <p class="phase">Simulado A</p>
+        <h3>30 questões · 3 horas</h3>
+        <p>10 Português (peso 2) · 10 Legislação (peso 2) · 10 Específicas (peso 4)</p>
+        <p class="tree-meta">${statusOf(1)} · máx. 80 pontos · mínimo 40</p>
+        <button type="button" class="btn primary" data-sim="1">Iniciar simulado</button>
+      </article>
+      <article class="card sim-card">
+        <p class="phase">Simulado B</p>
+        <h3>30 questões · 3 horas</h3>
+        <p>10 Português (peso 2) · 10 Legislação (peso 2) · 10 Específicas (peso 4)</p>
+        <p class="tree-meta">${statusOf(2)} · máx. 80 pontos · mínimo 40</p>
+        <button type="button" class="btn primary" data-sim="2">Iniciar simulado</button>
+      </article>
+    </div>
+    <details class="adv-filters">
+      <summary>Como funciona a prova</summary>
+      <p>30 questões · 10 PT (peso 2) · 10 Legislação (peso 2) · 10 Específicas (peso 4) · 80 pontos · mínimo 40. Cronômetro de 3 horas. Questões de treino, não oficiais. 1º desempate: específicas.</p>
+    </details>
     <article class="card">
-      <h3>Dois simulados no formato IBDO Tanguá</h3>
-      <p>30 questões · 10 PT (peso 2) · 10 Legislação (peso 2) · 10 Específicas (peso 4) · 80 pontos · mínimo 40. Cronômetro de 3 horas. Questões de treino, não oficiais.</p>
-      <p>Simulado 1: ${SIM_A.length} questões · 3h · máx. 80 · ${statusOf(1)}</p>
-      <p>Simulado 2: ${SIM_B.length} questões · 3h · máx. 80 · ${statusOf(2)}</p>
-      <div class="q-nav">
-        <button class="btn gold" data-sim="1">Iniciar simulado 1</button>
-        <button class="btn gold" data-sim="2">Iniciar simulado 2</button>
-      </div>
-    </article>
-    <article class="card">
-      <h3>Histórico e comparação</h3>
+      <h3>Histórico</h3>
       ${hist.length ? "<ul>" + hist.map((h) => `<li>${h.when} · Simulado ${h.n} · ${h.score}/80 ${h.score >= 40 ? "(atingiu o mínimo)" : "(abaixo do mínimo)"} · PT ${h.pt} · Leg ${h.leg} · Esp ${h.esp}</li>`).join("") + "</ul>" : "<p>Nenhum simulado concluído ainda.</p>"}
       ${hist.length >= 2 ? `<p>Último: ${hist[0].score}/80. Anterior: ${hist[1].score}/80. Diferença: ${hist[0].score - hist[1].score} ponto(s). Específicas (1º desempate): ${hist[0].esp} vs ${hist[1].esp}.</p>` : ""}
     </article>
@@ -1382,7 +1509,7 @@ function renderSimRun() {
       <div class="q-nav">
         <button class="btn" id="sim-prev">Anterior</button>
         <button class="btn" id="sim-next">Próxima</button>
-        <button class="btn gold" id="sim-end">Entregar</button>
+        <button class="btn primary" id="sim-end">Entregar</button>
       </div>
     </article>
   `;
@@ -1428,13 +1555,17 @@ function finishSim(auto) {
         <li>Legislação: ${legN}/10 acertos · ${leg} pts</li>
         <li>Específicas: ${espN}/10 acertos · ${esp} pts (1º desempate)</li>
       </ul>
-      <button class="btn gold" id="sim-back">Voltar</button>
+      <button class="btn primary" id="sim-back">Voltar</button>
     </article>
-    ${paper.map((q, i) => {
-      const choice = simState.choices[i];
-      const ok = choice === q.answer;
-      return `<article class="q-card"><p class="tag">${i + 1} · ${q.disc} · ${ok ? "certo" : "errado"}</p><h3>${q.stem}</h3><p class="explain">Sua resposta: ${choice == null ? "em branco" : "ABCD"[choice]}. Gabarito: ${"ABCD"[q.answer]}. ${q.why}${q.alts ? " " + q.choices.map((_, j) => "ABCD"[j] + ": " + q.alts[j]).join(" ") : ""}</p></article>`;
-    }).join("")}
+    <details class="adv-filters" open>
+      <summary>Questões incorretas e revisão</summary>
+      ${paper.filter((q, i) => simState.choices[i] !== q.answer).length ? paper.map((q, i) => {
+        const choice = simState.choices[i];
+        const ok = choice === q.answer;
+        if (ok) return "";
+        return `<article class="q-card"><p class="tag">${i + 1} · ${q.disc} · errado</p><h3>${q.stem}</h3><p class="explain">Sua resposta: ${choice == null ? "em branco" : "ABCD"[choice]}. Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p></article>`;
+      }).join("") : "<p>Nenhuma incorreta neste simulado.</p>"}
+    </details>
   `;
   document.getElementById("sim-back").addEventListener("click", () => { simState = null; renderSimHome(); });
   try { renderCaderno(); } catch (_) {}
@@ -1496,6 +1627,7 @@ let cadFilter = "all";
 function renderCaderno() {
   const box = document.getElementById("caderno-box");
   if (!box) return;
+  if (typeof uiDesempenho !== "undefined" && uiDesempenho === "revisoes" && cadFilter === "all") cadFilter = "due";
   const all = loadCaderno();
   const now = Date.now();
   const due = all.filter((c) => c.due <= now);
@@ -1511,17 +1643,9 @@ function renderCaderno() {
   all.forEach((c) => { topicHits[c.topic] = (topicHits[c.topic] || 0) + (c.misses || 1); });
   const hotTopics = Object.keys(topicHits).sort((a, b) => topicHits[b] - topicHits[a]).slice(0, 5);
   if (!all.length) {
-    box.innerHTML = `<article class="card"><h3>Nenhum erro registrado</h3><p>Ainda não há fichas. Erre uma questão no banco ou no simulado e ela entra aqui no mesmo dia, com D+1, D+3 e D+7.</p><div class="q-nav"><button type="button" class="btn gold" id="cad-go-q">Começar a resolver questões</button></div></article>`;
+    box.innerHTML = `<article class="card"><h3>Nenhum erro registrado</h3><p>Ainda não há fichas. Erre uma questão no banco ou no simulado e ela entra aqui no mesmo dia, com D+1, D+3 e D+7.</p><div class="q-nav"><button type="button" class="btn primary" id="cad-go-q">Começar a resolver questões</button></div></article>`;
     const go = document.getElementById("cad-go-q");
-    if (go) go.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      const tab = document.querySelector('.tab[data-panel="questoes"]');
-      if (tab) tab.classList.add("active");
-      const panel = document.getElementById("questoes");
-      if (panel) panel.classList.add("active");
-      renderQuestoes();
-    });
+    if (go) go.addEventListener("click", () => goPanel("questoes"));
     return;
   }
   box.innerHTML = `
@@ -1553,7 +1677,7 @@ function renderCaderno() {
         <h3>${c.stem}</h3>
         <p class="explain"><b>${c.art}.</b> ${c.why}</p>
         <div class="q-nav">
-          <button class="btn gold" data-ok="${c.id}">Acertei na revisão</button>
+           <button class="btn primary" data-ok="${c.id}">Acertei na revisão</button>
           <button class="btn" data-bad="${c.id}">Errei de novo</button>
           <button class="btn" data-retry="${c.id}">Resolver de novo</button>
         </div>
@@ -1605,13 +1729,7 @@ function renderCaderno() {
       qFilter = q ? q.disc : "all";
       const list = bankList();
       qIndex = Math.max(0, list.findIndex((x) => x.id === qid));
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      const tab = document.querySelector('.tab[data-panel="questoes"]');
-      if (tab) tab.classList.add("active");
-      const panel = document.getElementById("questoes");
-      if (panel) panel.classList.add("active");
-      renderQuestoes();
+      goPanel("questoes");
     });
   });
 }
