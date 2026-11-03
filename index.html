@@ -17,7 +17,7 @@
       document.documentElement.setAttribute("data-theme", t);
     } catch (e) {}
   </script>
-  <link rel="stylesheet" href="styles.css?v=20261103e" />
+  <link rel="stylesheet" href="styles.css?v=20261103g" />
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Ir ao conteúdo</a>
@@ -72,6 +72,7 @@
   </nav>
   <nav class="subnav" id="sub-conteudos" hidden aria-label="Conteúdos">
     <button type="button" class="subtab active" data-sub="edital">Edital</button>
+    <button type="button" class="subtab" data-sub="cobertura">Cobertura</button>
     <button type="button" class="subtab" data-sub="materiais">Materiais</button>
     <button type="button" class="subtab" data-sub="prazos">Prazos Lei 946</button>
   </nav>
@@ -83,6 +84,7 @@
     <button class="tab" data-panel="simulados" tabindex="-1">Simulados</button>
     <button class="tab" data-panel="caderno" tabindex="-1">Caderno</button>
     <button class="tab" data-panel="edital" tabindex="-1">Edital</button>
+    <button class="tab" data-panel="cobertura" tabindex="-1">Cobertura</button>
     <button class="tab" data-panel="materiais" tabindex="-1">Materiais</button>
     <button class="tab" data-panel="metodo" tabindex="-1">O que mudou</button>
     <button class="tab" data-panel="pesos" tabindex="-1">Estatísticas</button>
@@ -173,6 +175,14 @@
         <p><a href="https://tangua.rj.gov.br/wp-content/uploads/2025/10/Lei-0657-2007.pdf" target="_blank" rel="noopener">PDF oficial · Lei 657/2007</a></p>
       </article>
       </details>
+    </section>
+
+    <section id="cobertura" class="panel">
+      <div class="section-head">
+        <h2>Cobertura do Edital</h2>
+        <p>Matriz Anexo II: material, questões, desempenho e prioridade. Prioridade altera o tempo, não a presença do tópico.</p>
+      </div>
+      <div id="cobertura-box"></div>
     </section>
 
     <section id="materiais" class="panel">
@@ -516,7 +526,7 @@
       </div>
     </div>
   </div>
-  <script src="app.js?v=20261103e"></script>
-  <script src="dia.js?v=20261103e"></script>
+  <script src="app.js?v=20261103g"></script>
+  <script src="dia.js?v=20261103g"></script>
 </body>
 </html>
