@@ -367,6 +367,9 @@ th { color: var(--primary); font-weight: 600; font-size: 12px; letter-spacing: .
 }
 .q-card.due-now { border-color: var(--gold-2); }
 .q-card.repeat { border-left: 3px solid var(--bad); }
+.rec-list { margin: 8px 0 0 18px; }
+.rec-list li { margin: 8px 0; }
+.card-face h3 { font-size: 20px; }
 
 .tab:focus-visible, .chip:focus-visible, .btn:focus-visible, .q-opt:focus-visible,
 input:focus-visible, select:focus-visible, .nav-btn:focus-visible, .subtab:focus-visible, summary:focus-visible {

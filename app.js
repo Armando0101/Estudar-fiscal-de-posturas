@@ -359,7 +359,7 @@ function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + p
 function todayIso() {
   const n = new Date();
   if (n.getFullYear() === 2026 && n.getMonth() === 10) return iso(n);
-  return "2026-11-02";
+  return "2026-11-03";
 }
 
 function daysUntilExam() {
@@ -391,7 +391,7 @@ let covOpenId = null;
 function panelGroup(name) {
   if (name === "dia") return "calendario";
   if (name === "hoje" || name === "calendario" || name === "simulados" || name === "metodo") return name;
-  if (name === "questoes") return "praticar";
+  if (name === "questoes" || name === "flashcards") return "praticar";
   if (name === "caderno" || name === "pesos") return "desempenho";
   if (name === "edital" || name === "cobertura" || name === "materiais" || name === "prazos") return "conteudos";
   return name;
@@ -400,6 +400,7 @@ function panelGroup(name) {
 function syncNav(name) {
   uiGroup = panelGroup(name);
   if (name === "questoes") uiPraticar = wantDrill ? "treino" : "questoes";
+  if (name === "flashcards") uiPraticar = "flashcards";
   if (name === "caderno") uiDesempenho = uiDesempenho === "revisoes" ? "revisoes" : "caderno";
   if (name === "pesos") uiDesempenho = "pesos";
   if (name === "edital" || name === "cobertura" || name === "materiais" || name === "prazos") uiConteudos = name;
@@ -441,6 +442,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     try {
       if (btn.dataset.panel === "hoje" && typeof renderToday === "function") renderToday();
       if (btn.dataset.panel === "questoes" && typeof renderQuestoes === "function") renderQuestoes();
+      if (btn.dataset.panel === "flashcards" && typeof renderFlashcards === "function") renderFlashcards();
       if (btn.dataset.panel === "simulados" && typeof renderSimHome === "function") renderSimHome();
       if (btn.dataset.panel === "caderno" && typeof renderCaderno === "function") renderCaderno();
       if (btn.dataset.panel === "edital" && typeof renderEdital === "function") renderEdital();
@@ -479,6 +481,7 @@ document.querySelectorAll("#sub-praticar .subtab").forEach((btn) => {
     uiPraticar = btn.dataset.sub;
     qPick = null;
     if (uiPraticar === "treino") { wantDrill = true; goPanel("questoes"); }
+    else if (uiPraticar === "flashcards") { wantDrill = false; goPanel("flashcards"); }
     else { wantDrill = false; goPanel("questoes"); }
   });
 });
@@ -544,13 +547,37 @@ function dashStats() {
   return { blocksOn, blocksAll, answered: answered.length, okN, pct, weakName, due, sims, hours, bank: bankLen };
 }
 
+function nowStudyHtml(cov, dsh, remaining) {
+  const recs = [];
+  const rows = (cov && cov.rows) || [];
+  const notStarted = rows.filter((r) => r.sit === "nao" || r.sit === "material");
+  const highGap = rows.filter((r) => r.e.pri === "alta" && r.sit !== "dominado");
+  const weak = rows.filter((r) => r.pct != null && r.answered >= 2 && r.pct < 70).sort((a, b) => a.pct - b.pct);
+  const practice = rows.filter((r) => r.sit === "praticar" || r.sit === "questoes");
+  if (notStarted[0]) recs.push({ t: "Ainda não estudado", d: notStarted[0].e.topic, why: "Assunto do Anexo II sem prática. Faltam ~" + remaining + " dias.", go: "cobertura", id: notStarted[0].e.id });
+  if (highGap[0] && (!notStarted[0] || highGap[0].e.id !== notStarted[0].e.id)) recs.push({ t: "Maior peso / prioridade alta", d: highGap[0].e.topic, why: "Específicas valem 40/80. Prioridade altera o tempo, não a presença.", go: "cobertura", id: highGap[0].e.id });
+  if (weak[0]) recs.push({ t: "Baixo aproveitamento", d: weak[0].e.topic + " · " + weak[0].pct + "%", why: "Reforce com questões, não com releitura.", go: "cobertura", id: weak[0].e.id });
+  if (dsh.due) recs.push({ t: "Revisões vencidas", d: dsh.due + " ficha(s) no caderno", why: "D+1 / D+3 / D+7. Erro recente volta mais cedo.", go: "caderno" });
+  if (practice[0] && recs.length < 5) recs.push({ t: "Precisa praticar", d: practice[0].e.topic, why: "Há material, mas ainda falta volume de questões.", go: "cobertura", id: practice[0].e.id });
+  if (!recs.length) recs.push({ t: "Manter ritmo", d: "Simulado ou intercalação", why: "Sem lacuna crítica detectada. Preserve específica, PT e legislação.", go: "simulados" });
+  return `
+    <article class="card rec-now">
+      <h3>O que devo estudar agora?</h3>
+      <p class="tree-meta">Ordem: lacuna do edital → peso da prova → baixo acerto → revisão vencida → prioridade alta. Tempo restante até 22/11 entra no recorte, não no corte de matéria.</p>
+      <ol class="rec-list">
+        ${recs.slice(0, 5).map((r) => `<li><b>${r.t}:</b> ${r.d}<br><span class="tree-meta">${r.why}</span>${r.id ? ` <button type="button" class="btn" data-recid="${r.id}">Abrir</button>` : ` <button type="button" class="btn" data-home="${r.go}">Abrir</button>`}</li>`).join("")}
+      </ol>
+    </article>
+  `;
+}
+
 function coverageSummary() {
   const official = EDITAL.filter((e) => (e.cat || "oficial") === "oficial" || e.cat === "anexo1");
   const rows = official.map((e) => Object.assign({ e: e }, topicCoverage(e)));
   const withMat = rows.filter((r) => r.hasNote).length;
   const withQ = rows.filter((r) => r.qs.length > 0).length;
-  const concluded = rows.filter((r) => r.sit === "concluida").length;
-  const highOpen = rows.filter((r) => r.e.pri === "alta" && r.sit !== "concluida")[0];
+  const concluded = rows.filter((r) => r.sit === "dominado").length;
+  const highOpen = rows.filter((r) => r.e.pri === "alta" && r.sit !== "dominado")[0];
   const weak = rows.filter((r) => r.pct != null && r.answered >= 2).sort((a, b) => a.pct - b.pct)[0];
   const discs = {};
   rows.forEach((r) => {
@@ -558,7 +585,7 @@ function coverageSummary() {
     discs[r.e.disc].n += 1;
     if (r.hasNote) discs[r.e.disc].mat += 1;
     if (r.qs.length) discs[r.e.disc].q += 1;
-    if (r.sit === "concluida") discs[r.e.disc].done += 1;
+    if (r.sit === "dominado") discs[r.e.disc].done += 1;
   });
   return { rows, withMat, withQ, concluded, total: rows.length, highOpen, weak, discs, pct: Math.round(concluded * 100 / rows.length) };
 }
@@ -593,7 +620,7 @@ function renderToday() {
     </div>
     <article class="card">
       <h3>Cobertura real do edital</h3>
-      <p>${cov.concluded}/${cov.total} tópicos com cobertura concluída (${cov.pct}%). Material: ${cov.withMat}/${cov.total}. Questões: ${cov.withQ}/${cov.total}. O percentual não é só questões respondidas: exige material, exercícios e marca de estudo.</p>
+      <p>${cov.concluded}/${cov.total} tópicos dominados (${cov.pct}%). Material: ${cov.withMat}/${cov.total}. Questões: ${cov.withQ}/${cov.total}. Dominado exige prática recente com aproveitamento, não só a marca de estudo.</p>
       <ul>
         ${Object.keys(cov.discs).map((d) => `<li><b>${d}:</b> ${cov.discs[d].done}/${cov.discs[d].n} concluídos · ${cov.discs[d].q} com questões</li>`).join("")}
       </ul>
@@ -605,11 +632,14 @@ function renderToday() {
         ${cov.highOpen ? `<button type="button" class="btn gold" id="home-high">Estudar prioridade alta</button>` : ""}
       </div>
     </article>
+    ${nowStudyHtml(cov, dsh, remaining)}
     <p class="phase" style="margin:4px 0 8px">Acesso rápido</p>
     <div class="quick-actions">
       <button type="button" class="btn" data-home="calendario">Continuar cronograma</button>
       <button type="button" class="btn" data-home="questoes">Resolver questões</button>
       <button type="button" class="btn" data-home="treino">Fazer treino rápido</button>
+      <button type="button" class="btn" data-home="flashcards">Flashcards</button>
+      <button type="button" class="btn" data-home="simulados">Iniciar simulado</button>
       <button type="button" class="btn" data-home="caderno">Caderno de erros</button>
     </div>
   `;
@@ -622,6 +652,7 @@ function renderToday() {
     b.addEventListener("click", () => {
       const t = b.dataset.home;
       if (t === "treino") { qPick = null; wantDrill = true; goPanel("questoes"); }
+      else if (t === "flashcards") { wantDrill = false; goPanel("flashcards"); }
       else if (t === "caderno") { uiDesempenho = "caderno"; goPanel("caderno"); }
       else goPanel(t);
     });
@@ -631,6 +662,10 @@ function renderToday() {
     covOpenId = cov.highOpen.e.id;
     goPanel("cobertura");
   });
+  el.querySelectorAll("[data-recid]").forEach((b) => b.addEventListener("click", () => {
+    covOpenId = b.dataset.recid;
+    goPanel("cobertura");
+  }));
 }
 
 function renderCal(filter) {
@@ -899,22 +934,29 @@ function topicCoverage(e) {
   const hasNote = !!NOTES[e.id];
   const rec = e.recQ || 0;
   const doneMark = editalDone(map[e.id]);
+  const lastAt = answered.reduce((mx, q) => Math.max(mx, Number((ans[q.id] && ans[q.id].at) || 0)), 0);
+  const lastRev = lastAt ? new Date(lastAt).toLocaleDateString("pt-BR") : "";
+  const nextRev = lastAt ? new Date(lastAt + 3 * 86400000).toLocaleDateString("pt-BR") : "";
   let sit = "nao";
   if (e.cat === "complementar") sit = "comp";
-  else if (hasNote && qs.length >= Math.max(3, Math.min(rec, 3)) && answered.length >= 2 && doneMark) sit = "concluida";
+  else if (hasNote && qs.length >= Math.max(3, Math.min(rec || 3, 3)) && answered.length >= 3 && pct != null && pct >= 80 && lastAt && (Date.now() - lastAt) <= 7 * 86400000) sit = "dominado";
+  else if (hasNote && qs.length && answered.length >= 2 && pct != null && pct >= 70 && lastAt && (Date.now() - lastAt) > 3 * 86400000) sit = "revisao";
+  else if (hasNote && qs.length && answered.length >= 2 && pct != null && pct < 70) sit = "praticar";
   else if (hasNote && qs.length && answered.length) sit = "estudo";
   else if (hasNote && qs.length) sit = "questoes";
   else if (hasNote) sit = "material";
-  return { qs, answered: answered.length, ok, pct, hasNote, rec, doneMark, sit };
+  return { qs, answered: answered.length, ok, pct, hasNote, rec, doneMark, sit, lastRev, nextRev, lastAt };
 }
 
 function sitLabel(sit) {
   return ({
     nao: "Não iniciado",
     material: "Material disponível",
-    questoes: "Questões disponíveis",
-    estudo: "Em estudo",
-    concluida: "Cobertura concluída",
+    questoes: "Precisa praticar",
+    estudo: "Estudando",
+    praticar: "Precisa praticar",
+    revisao: "Em revisão",
+    dominado: "Dominado",
     comp: "Complementar"
   })[sit] || sit;
 }
@@ -937,14 +979,16 @@ function renderCobertura() {
   const withMat = rows.filter((r) => r.hasNote).length;
   const withQ = rows.filter((r) => r.qs.length > 0).length;
   const withWhy = rows.filter((r) => r.qs.length && r.qs.every((q) => q.why)).length;
-  const concluded = rows.filter((r) => r.sit === "concluida").length;
+  const concluded = rows.filter((r) => r.sit === "dominado").length;
   const list = rows.filter((r) => {
     if (covFilterDisc !== "all" && r.e.disc !== covFilterDisc) return false;
     if (covFilterPri !== "all" && r.e.pri !== covFilterPri) return false;
     if (covFilterSit === "semq" && r.qs.length) return false;
     if (covFilterSit === "nao" && r.sit !== "nao" && r.sit !== "material") return false;
+    if (covFilterSit === "praticar" && r.sit !== "praticar" && r.sit !== "questoes") return false;
+    if (covFilterSit === "revisao" && r.sit !== "revisao") return false;
     if (covFilterSit === "baixo" && !(r.pct != null && r.pct < 70 && r.answered >= 2)) return false;
-    if (covFilterSit === "ok" && r.sit !== "concluida") return false;
+    if (covFilterSit === "ok" && r.sit !== "dominado") return false;
     return true;
   });
   const open = covOpenId ? EDITAL.find((e) => e.id === covOpenId) : null;
@@ -953,9 +997,9 @@ function renderCobertura() {
     <div class="dash dash-3">
       <div class="stat"><b>${withMat}/${rows.length}</b><span>tópicos com material</span></div>
       <div class="stat"><b>${withQ}/${rows.length}</b><span>tópicos com questões</span></div>
-      <div class="stat"><b>${concluded}/${rows.length}</b><span>cobertura concluída (material + questões + prática + marca)</span></div>
+      <div class="stat"><b>${concluded}/${rows.length}</b><span>dominados (prática recente ≥80%, não só marca de estudo)</span></div>
     </div>
-    <p class="tree-meta">Cobertura real não é só checkbox. Gabarito autoral validado nas questões novas. ${withWhy} tópico(s) com explicação em todas as questões ligadas. Percentual de cobertura integral: ${Math.round(concluded * 100 / rows.length)}%.</p>
+    <p class="tree-meta">Cobertura real não é só checkbox. Dominado exige material, questões, ≥3 respostas, ≥80% e prática nos últimos 7 dias. ${withWhy} tópico(s) com explicação em todas as questões ligadas. Percentual dominado: ${Math.round(concluded * 100 / rows.length)}%.</p>
     <article class="card">
       <h3>Amostra IBDO (sem invenção)</h3>
       <p>${IBDO_SAMPLE.note}</p>
@@ -978,16 +1022,18 @@ function renderCobertura() {
     </div>
     <div class="filters" id="cov-sit">
       <button type="button" class="chip ${covFilterSit === "all" ? "active" : ""}" data-cs="all">Todas as situações</button>
-      <button type="button" class="chip ${covFilterSit === "nao" ? "active" : ""}" data-cs="nao">Não estudados</button>
+      <button type="button" class="chip ${covFilterSit === "nao" ? "active" : ""}" data-cs="nao">Não iniciados</button>
+      <button type="button" class="chip ${covFilterSit === "praticar" ? "active" : ""}" data-cs="praticar">Precisa praticar</button>
+      <button type="button" class="chip ${covFilterSit === "revisao" ? "active" : ""}" data-cs="revisao">Em revisão</button>
       <button type="button" class="chip ${covFilterSit === "semq" ? "active" : ""}" data-cs="semq">Sem questões</button>
       <button type="button" class="chip ${covFilterSit === "baixo" ? "active" : ""}" data-cs="baixo">Baixo aproveitamento</button>
-      <button type="button" class="chip ${covFilterSit === "ok" ? "active" : ""}" data-cs="ok">Concluídos</button>
+      <button type="button" class="chip ${covFilterSit === "ok" ? "active" : ""}" data-cs="ok">Dominados</button>
     </div>
     ${open && openCov ? `
       <article class="card good" id="cov-open">
         <p class="pri">${open.pri} · ${sitLabel(openCov.sit)}</p>
         <h3>${open.topic}</h3>
-        <p class="tree-meta">${evidLabel(open.evid)} · meta inicial ${open.recQ || 0} questão(ões) · ${openCov.qs.length} no banco${openCov.pct != null ? " · " + openCov.pct + "% (" + openCov.ok + "/" + openCov.answered + ")" : " · sem prática ainda"}</p>
+        <p class="tree-meta">${evidLabel(open.evid)} · meta inicial ${open.recQ || 0} questão(ões) · ${openCov.qs.length} no banco${openCov.pct != null ? " · " + openCov.pct + "% (" + openCov.ok + "/" + openCov.answered + ")" : " · sem prática ainda"}${openCov.lastRev ? " · última " + openCov.lastRev : ""}${openCov.nextRev ? " · próxima " + openCov.nextRev : ""}</p>
         ${noteHtml(open.id)}
         <div class="q-nav">
           ${openCov.qs.length ? `<button type="button" class="btn primary" data-goq="${open.id}">Questões deste assunto</button>` : ""}
@@ -1001,7 +1047,7 @@ function renderCobertura() {
       <div class="tree-item">
         <span>
           <span class="pri">${r.e.pri} · ${sitLabel(r.sit)}</span><br>${r.e.topic}
-          <span class="tree-meta">${r.hasNote ? "material" : "sem nota"} · ${r.qs.length} questão(ões)${r.pct != null ? " · " + r.pct + "%" : ""}${r.e.recQ ? " · meta " + r.e.recQ : ""} · ${evidLabel(r.e.evid)}</span>
+          <span class="tree-meta">${r.hasNote ? "material" : "sem nota"} · ${r.qs.length} questão(ões)${r.pct != null ? " · " + r.pct + "%" : ""}${r.e.recQ ? " · meta " + r.e.recQ : ""}${r.lastRev ? " · última " + r.lastRev : ""}${r.nextRev ? " · próxima " + r.nextRev : ""} · ${evidLabel(r.e.evid)}</span>
           <span class="links">
             <button type="button" data-covopen="${r.e.id}">Abrir</button>
             ${r.qs.length ? `<button type="button" data-goq="${r.e.id}">Resolver</button>` : ""}
@@ -1180,9 +1226,14 @@ let qIndex = 0;
 let qMode = "all";
 let qLevel = "all";
 let qTopic = "all";
+let qSub = "all";
+let qOrigin = "all";
+let qHasWhy = false;
+let qHasArt = false;
 let qPick = null;
 let qSearch = "";
 let drill = null;
+const qFilterSaveKey = "tango-fiscal-qfilters";
 
 function setQStatus(msg) {
   const el = document.getElementById("q-status");
@@ -1206,6 +1257,13 @@ function bankList() {
     if (qMode === "review" && !rev[item.id]) return false;
     if (qLevel !== "all" && (item.level || "média") !== qLevel) return false;
     if (qTopic !== "all" && item.topic !== qTopic) return false;
+    if (qSub !== "all" && (item.sub || "") !== qSub) return false;
+    if (qOrigin !== "all") {
+      const orig = item.origin === "oficial" ? "oficial" : "autoral";
+      if (orig !== qOrigin) return false;
+    }
+    if (qHasWhy && !item.why) return false;
+    if (qHasArt && !item.art) return false;
     if (q) {
       const blob = [item.stem, item.topic, item.sub, item.art, item.disc, item.why].join(" ").toLowerCase();
       if (blob.indexOf(q) < 0) return false;
@@ -1373,7 +1431,7 @@ function openDrillSetup() {
         ${official.map((e) => `<option value="edital:${e.id}">${e.disc} · ${e.topic}</option>`).join("")}
       </select></label>
       <div class="q-nav">
-        <button type="button" class="btn primary" id="drill-go">Iniciar treino</button>
+        <button type="button" class="btn primary" id="drill-go">Começar treino</button>
         <button type="button" class="btn" id="drill-cancel">Voltar ao banco</button>
       </div>
     </article>
@@ -1573,8 +1631,10 @@ function renderQuestoes() {
   const levels = ["all", "fácil", "média", "difícil"];
   const topics = ["all"].concat(Array.from(new Set(BANK.filter((q) => qFilter === "all" || q.disc === qFilter).map((q) => q.topic))).sort());
   if (qTopic !== "all" && topics.indexOf(qTopic) < 0) qTopic = "all";
+  const subs = ["all"].concat(Array.from(new Set(BANK.filter((q) => (qFilter === "all" || q.disc === qFilter) && (qTopic === "all" || q.topic === qTopic) && q.sub).map((q) => q.sub))).sort());
+  if (qSub !== "all" && subs.indexOf(qSub) < 0) qSub = "all";
   const esc = (s) => String(s || "").replace(/"/g, "&quot;");
-  const advOpen = !!(qTopic !== "all" || qLevel !== "all" || qMode === "review");
+  const advOpen = !!(qTopic !== "all" || qSub !== "all" || qLevel !== "all" || qOrigin !== "all" || qHasWhy || qHasArt || qMode === "review");
   const edItem = qEdital ? EDITAL.find((e) => e.id === qEdital) : null;
   filters.innerHTML = `
     <label class="search-field">Pesquisar<input type="search" id="q-search" value="${esc(qSearch)}" placeholder="enunciado, assunto ou artigo" /></label>
@@ -1591,8 +1651,22 @@ function renderQuestoes() {
     <details class="adv-filters" ${advOpen ? "open" : ""}>
       <summary>Filtros avançados</summary>
       <div class="filter-group" style="margin-top:10px"><span class="filter-label">Dificuldade</span>${levels.map((lv) => `<button type="button" class="chip ${qLevel === lv ? "active" : ""}" data-ql="${lv}">${lv === "all" ? "Qualquer nível" : lv}</button>`).join("")}</div>
+      <div class="filter-group" style="margin-top:10px"><span class="filter-label">Origem</span>
+        <button type="button" class="chip ${qOrigin === "all" ? "active" : ""}" data-qo="all">Todas</button>
+        <button type="button" class="chip ${qOrigin === "autoral" ? "active" : ""}" data-qo="autoral">Autoral (estilo IBDO)</button>
+        <button type="button" class="chip ${qOrigin === "oficial" ? "active" : ""}" data-qo="oficial">Oficial IBDO</button>
+      </div>
       <div class="filter-group" style="margin-top:10px"><span class="filter-label">Revisão</span><button type="button" class="chip ${qMode === "review" ? "active" : ""}" data-qm="review">Marcadas para revisão</button></div>
+      <div class="filter-group" style="margin-top:10px"><span class="filter-label">Conteúdo</span>
+        <button type="button" class="chip ${qHasWhy ? "active" : ""}" id="q-has-why">Com explicação</button>
+        <button type="button" class="chip ${qHasArt ? "active" : ""}" id="q-has-art">Com referência legal</button>
+      </div>
       <label class="search-field" style="margin-top:10px">Assunto <select id="q-topic">${topics.map((t) => `<option value="${t}" ${qTopic === t ? "selected" : ""}>${t === "all" ? "Todos os assuntos" : t}</option>`).join("")}</select></label>
+      <label class="search-field" style="margin-top:10px">Subassunto <select id="q-sub">${subs.map((t) => `<option value="${t}" ${qSub === t ? "selected" : ""}>${t === "all" ? "Todos os subassuntos" : t}</option>`).join("")}</select></label>
+      <div class="q-nav" style="margin-top:10px">
+        <button type="button" class="btn" id="q-save-filter">Salvar este filtro</button>
+        <button type="button" class="btn" id="q-load-filter">Usar filtro salvo</button>
+      </div>
     </details>
   `;
   const edClear = document.getElementById("q-edital-clear");
@@ -1606,8 +1680,42 @@ function renderQuestoes() {
   filters.querySelectorAll("button[data-ql]").forEach((btn) => {
     btn.addEventListener("click", () => { qLevel = btn.dataset.ql; qIndex = 0; qPick = null; renderQuestoes(); });
   });
+  filters.querySelectorAll("button[data-qo]").forEach((btn) => {
+    btn.addEventListener("click", () => { qOrigin = btn.dataset.qo; qIndex = 0; qPick = null; renderQuestoes(); });
+  });
+  const whyBtn = document.getElementById("q-has-why");
+  if (whyBtn) whyBtn.addEventListener("click", () => { qHasWhy = !qHasWhy; qIndex = 0; qPick = null; renderQuestoes(); });
+  const artBtn = document.getElementById("q-has-art");
+  if (artBtn) artBtn.addEventListener("click", () => { qHasArt = !qHasArt; qIndex = 0; qPick = null; renderQuestoes(); });
   const topicSel = document.getElementById("q-topic");
-  if (topicSel) topicSel.addEventListener("change", () => { qTopic = topicSel.value; qIndex = 0; qPick = null; renderQuestoes(); });
+  if (topicSel) topicSel.addEventListener("change", () => { qTopic = topicSel.value; qSub = "all"; qIndex = 0; qPick = null; renderQuestoes(); });
+  const subSel = document.getElementById("q-sub");
+  if (subSel) subSel.addEventListener("change", () => { qSub = subSel.value; qIndex = 0; qPick = null; renderQuestoes(); });
+  const saveF = document.getElementById("q-save-filter");
+  if (saveF) saveF.addEventListener("click", () => {
+    lsSet(qFilterSaveKey, JSON.stringify({ qFilter, qMode, qLevel, qTopic, qSub, qOrigin, qHasWhy, qHasArt, qSearch }));
+    setQStatus("Filtro salvo neste navegador.");
+  });
+  const loadF = document.getElementById("q-load-filter");
+  if (loadF) loadF.addEventListener("click", () => {
+    try {
+      const s = JSON.parse(lsGet(qFilterSaveKey) || "null");
+      if (!s) { setQStatus("Nenhum filtro salvo."); return; }
+      qFilter = s.qFilter || "all";
+      qMode = s.qMode || "all";
+      qLevel = s.qLevel || "all";
+      qTopic = s.qTopic || "all";
+      qSub = s.qSub || "all";
+      qOrigin = s.qOrigin || "all";
+      qHasWhy = !!s.qHasWhy;
+      qHasArt = !!s.qHasArt;
+      qSearch = s.qSearch || "";
+      qIndex = 0;
+      qPick = null;
+      renderQuestoes();
+      setQStatus("Filtro salvo aplicado.");
+    } catch (_) { setQStatus("Não foi possível ler o filtro salvo."); }
+  });
   const search = document.getElementById("q-search");
   if (search) {
     search.addEventListener("input", () => {
@@ -1683,7 +1791,8 @@ function renderQuestoes() {
 function feedbackHtml(q, rec) {
   const head = rec.ok ? "Certo." : "Errado.";
   const alts = q.alts ? `<details class="adv-filters" style="margin-top:10px"><summary>Ver explicação das alternativas</summary><p class="explain">${q.choices.map((_, i) => "<b>" + "ABCD"[i] + "</b>: " + q.alts[i]).join("<br>")}</p></details>` : "";
-  return `<div class="q-feedback"><p class="explain"><b>${head}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p><details class="adv-filters"><summary>Ver fundamento</summary><p class="explain"><b>Fundamento:</b> ${q.art}.</p></details>${alts}</div>`;
+  const whyWrong = rec.ok ? "" : `<p class="tree-meta">Qual foi o motivo do seu erro?</p><div class="filters" id="err-why">${[["conteudo","Não conhecia o conteúdo"],["conceitos","Confundi conceitos"],["desatencao","Errei por desatenção"],["exceto","Não percebi o NÃO ou EXCETO"],["enunciado","Interpretei errado o enunciado"],["chute","Chutei"],["prazo","Esqueci um prazo ou artigo"]].map((x) => `<button type="button" class="chip ${rec.whyErr === x[0] ? "active" : ""}" data-err="${x[0]}">${x[1]}</button>`).join("")}</div>`;
+  return `<div class="q-feedback"><p class="explain"><b>${head}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p><details class="adv-filters"><summary>Ver fundamento</summary><p class="explain"><b>Fundamento:</b> ${q.art}.</p></details>${alts}${whyWrong}</div>`;
 }
 
 function bindQuestionCard(box, q, rec) {
@@ -1722,6 +1831,21 @@ function bindQuestionCard(box, q, rec) {
       renderQuestoes();
     });
   }
+  box.querySelectorAll("[data-err]").forEach((b) => {
+    b.addEventListener("click", () => {
+      if (wantDrill && drill && drill.picks[q.id]) {
+        drill.picks[q.id].whyErr = b.dataset.err;
+        renderQuestoes();
+        return;
+      }
+      const next = loadAnswers();
+      if (next[q.id]) {
+        next[q.id].whyErr = b.dataset.err;
+        saveAnswers(next);
+      }
+      renderQuestoes();
+    });
+  });
 }
 
 try { renderQuestoes(); } catch (_) {}
@@ -1835,6 +1959,27 @@ const MORE_BANK5 = [
 ];
 MORE_BANK5.forEach((q) => BANK.push(q));
 
+const MORE_BANK6 = [
+  { id: "q104", disc: "Português", topic: "Fonologia", sub: "Tritongo", level: "média", edital: ["pt-fono"], art: "Anexo II · encontros vocálicos", origin: "autoral", stem: "Há tritongo em:", choices: ["saída.", "pai.", "Uruguai.", "poesia."], answer: 2, why: "Questão autoral. Tritongo: vogal entre duas semivogais na mesma sílaba (U-ru-guai). 'Saída' e 'poesia' têm hiato; 'pai' é ditongo decrescente.", alts: ["Hiato (sa-í-da).", "Ditongo decrescente.", "Certo: tritongo.", "Hiato (po-e-si-a)."] },
+  { id: "q105", disc: "Português", topic: "Figuras", sub: "Eufemismo", level: "fácil", edital: ["pt-fig"], art: "Anexo II · figuras de linguagem", origin: "autoral", stem: "Há eufemismo em:", choices: ["O relatório está na mesa.", "O servidor faltou à verdade no depoimento.", "A lei foi publicada ontem.", "O relógio marcou três horas."], answer: 1, why: "Questão autoral. Eufemismo suaviza o desagradável ('faltou à verdade' por 'mentiu'). As outras são denotativas.", alts: ["Denotativo.", "Certo.", "Denotativo.", "Denotativo."] },
+  { id: "q106", disc: "Português", topic: "Funções da linguagem", sub: "Função apelativa", level: "fácil", edital: ["pt-func"], art: "Anexo II · funções da linguagem", origin: "autoral", stem: "O cartaz 'Compareça à posse no prazo legal' privilegia, sobretudo, a função:", choices: ["Emotiva.", "Apelativa (ou conativa).", "Poética.", "Metalinguística."], answer: 1, why: "Questão autoral. Apelativa/conativa dirige-se ao receptor (ordem, convite). Emotiva foca o emissor; poética, a forma; metalinguística, o código.", alts: ["Emotiva: sentimento do emissor.", "Certo.", "Poética: estética.", "Metalinguística: falar da língua."] },
+  { id: "q107", disc: "Português", topic: "Tipos e gêneros", sub: "Texto injuntivo", level: "fácil", edital: ["pt-gen"], art: "Anexo II · tipos e gêneros", origin: "autoral", stem: "Um edital que determina 'leve documento original e caneta transparente' é, quanto ao tipo, principalmente:", choices: ["Narrativo.", "Descritivo.", "Injuntivo (instrucional).", "Poético."], answer: 2, why: "Questão autoral. Injunção instrui o destinatário a fazer algo. Narração relata; descrição caracteriza; poético privilegia a forma estética.", alts: ["Narração: fatos encadeados.", "Descrição: características.", "Certo.", "Não é o tipo dominante."] },
+  { id: "q108", disc: "Legislação", topic: "Exercício", sub: "Exoneração de ofício", level: "média", edital: ["leg-946-inv"], art: "Lei 946, Art. 50, II", origin: "autoral", stem: "Não entrar em exercício no prazo do Art. 36 da Lei 946/2014 implica, em regra:", choices: ["Demissão após PAD.", "Exoneração de ofício.", "Cassação de aposentadoria.", "Aproveitamento automático em outro cargo."], answer: 1, why: "Questão autoral. Art. 50, II: exoneração de ofício quando o empossado não entra em exercício no prazo. Demissão é penalidade (Art. 217); cassação também. Aproveitamento é forma de provimento (Art. 20).", alts: ["Demissão exige processo e pena.", "Certo: Art. 50, II.", "Cassação é penalidade do Art. 217.", "Aproveitamento não é a consequência do Art. 50, II."] },
+  { id: "q109", disc: "Legislação", topic: "Lei Orgânica", sub: "Competência suplementar", level: "média", edital: ["leg-lom"], art: "LOM Tanguá, Art. 20, II", origin: "autoral", stem: "Além de legislar sobre interesse local, compete ao Município de Tanguá, na LOM:", choices: ["Declarar guerra.", "Suplementar a legislação federal e a estadual, no que couber.", "Emitir moeda.", "Legislar privativamente sobre direito penal."], answer: 1, why: "Questão autoral. LOM Art. 20, II: suplementar legislação federal e estadual, no que couber. Guerra, moeda e direito penal não são competência municipal.", alts: ["União.", "Certo: Art. 20, II.", "União.", "União."] },
+  { id: "q110", disc: "Específicas", topic: "CF 37", sub: "Concurso", level: "fácil", edital: ["esp-cf-adm"], art: "CF Art. 37, II", origin: "autoral", stem: "A investidura em cargo ou emprego público, no Art. 37, II, da CF, depende, em regra, de:", choices: ["Livre escolha, em qualquer cargo efetivo.", "Prévia aprovação em concurso público de provas ou de provas e títulos, de acordo com a natureza e a complexidade do cargo ou emprego, na forma prevista em lei, ressalvadas as nomeações para cargo em comissão.", "Sorteio entre inscritos.", "Indicação parlamentar obrigatória para todo efetivo."], answer: 1, why: "Questão autoral. CF Art. 37, II. Cargo em comissão é a ressalva de livre nomeação. Efetivo exige concurso.", alts: ["Contradiz o inciso II.", "Certo.", "Não previsto.", "Não é a regra do inciso II."] },
+  { id: "q111", disc: "Específicas", topic: "Atos", sub: "Composto", level: "média", edital: ["esp-adm-atos-class"], art: "Doutrina · Anexo II", origin: "autoral", stem: "O ato composto, na classificação do Anexo II, caracteriza-se por:", choices: ["Formar-se com a vontade de um só órgão, sem acessório.", "Reunir vontades de órgãos diversos em um único ato, como o complexo.", "Haver um ato principal e outro acessório que o aperfeiçoa ou dá eficácia.", "Ser sempre contrato com o particular."], answer: 2, why: "Questão autoral. Composto: principal + acessório. Simples: um órgão. Complexo: vontades de órgãos diversos fundidas num só ato. Contrato é outra classificação (bilateral).", alts: ["Isso é ato simples.", "Isso é ato complexo.", "Certo.", "Bilateral/contrato não define composto."] },
+  { id: "q112", disc: "Específicas", topic: "Bens públicos", sub: "Dominicais", level: "média", edital: ["esp-adm-bens"], art: "CC Arts. 98–103 / doutrina", origin: "autoral", stem: "Terreno municipal vago, sem destinação a uso comum nem a serviço público, classifica-se, em regra, como bem:", choices: ["De uso comum do povo.", "De uso especial.", "Dominical.", "Privado do fiscal que o encontrou."], answer: 2, why: "Questão autoral. Dominicais: patrimônio disponível, sem destinação a uso comum ou especial. Rua/praça = comum. Repartição em uso = especial. Bem público não se apropria o fiscal.", alts: ["Comum exige uso da coletividade (rua, praça).", "Especial: afetado a serviço (repartição).", "Certo.", "Vedado."] },
+  { id: "q113", disc: "Específicas", topic: "Ética", sub: "Sigilo", level: "fácil", edital: ["esp-etica"], art: "Anexo II · ética / Lei 946 Art. 204, VIII", origin: "autoral", stem: "Guardar sigilo sobre assunto da repartição, no recorte de ética profissional e da Lei 946/2014, é:", choices: ["Faculdade do servidor, quando lhe convier.", "Dever funcional (Art. 204, VIII), alinhado à ética do Anexo II.", "Proibição de tratar o público com urbanidade.", "Autorização para omitir irregularidade da chefia."], answer: 1, why: "Questão autoral. Art. 204, VIII: dever de sigilo. Urbanidade também é dever (XI). Levar irregularidade à autoridade é dever (VI), não omissão.", alts: ["Não é facultativo.", "Certo.", "Urbanidade é dever, não proibição.", "Omissão ofende o Art. 204, VI."] },
+  { id: "q114", disc: "Específicas", topic: "Informática", sub: "Windows", level: "fácil", edital: ["esp-info-so"], art: "Anexo II · sistemas operacionais Microsoft", origin: "autoral", stem: "No Windows, em noções de nível médio, a Lixeira serve principalmente para:", choices: ["Formatar o disco de forma irreversível.", "Guardar, de modo recuperável em regra, arquivos excluídos pelo usuário, até esvaziá-la.", "Substituir a memória RAM.", "Instalar o Internet Explorer."], answer: 1, why: "Questão autoral. Lixeira: exclusão reversível até o esvaziamento. Não formata disco, não é RAM, não instala navegador.", alts: ["Formatação não é função da Lixeira.", "Certo.", "RAM é memória volátil.", "IE não se instala pela Lixeira."] },
+  { id: "q115", disc: "Específicas", topic: "Informática", sub: "Office", level: "média", edital: ["esp-info-so"], art: "Anexo II · Pacote Microsoft Office", origin: "autoral", stem: "No Excel, a fórmula =SOMA(A1:A3) destina-se, em noções, a:", choices: ["Concatenar texto, como o Word.", "Somar o intervalo de células de A1 até A3.", "Apagar o arquivo.", "Criar macro VBA, exigida pelo edital."], answer: 1, why: "Questão autoral. SOMA é função básica de planilha. O edital não pede VBA. Concatenar texto e apagar arquivo não são essa fórmula.", alts: ["Word/texto não é SOMA.", "Certo.", "Não apaga arquivo.", "VBA está fora do edital."] },
+  { id: "q116", disc: "Específicas", topic: "Procedimento", sub: "Fases", level: "média", edital: ["esp-adm-proc"], art: "Doutrina · Anexo II", origin: "autoral", stem: "Em noções de procedimento administrativo na formação do ato, a sequência típica é:", choices: ["Recurso extraordinário, ADI e súmula vinculante.", "Instauração, instrução e decisão, distintas do processo judicial.", "Somente sentença penal condenatória.", "Emenda à Lei Orgânica em turno único, por decreto do particular."], answer: 1, why: "Questão autoral. Anexo II pede procedimento na formação do ato: fases preparatórias até a decisão. Não é controle concentrado, processo penal nem emenda à LOM.", alts: ["Fora do recorte de noções do Fiscal.", "Certo.", "Fora do recorte.", "Emenda à LOM é Art. 69, não procedimento do ato."] },
+  { id: "q117", disc: "Específicas", topic: "CF 5º", sub: "Habeas corpus", level: "fácil", edital: ["esp-cf-5"], art: "CF Art. 5º, LXVIII", origin: "autoral", stem: "O habeas corpus, no Art. 5º da CF, destina-se a:", choices: ["Conhecer dados pessoais em registro público.", "Fazer cessar violência ou coação à liberdade de locomoção, por ilegalidade ou abuso de poder.", "Anular lei em tese no STF.", "Substituir o concurso público."], answer: 1, why: "Questão autoral. CF Art. 5º, LXVIII: HC protege locomoção. Dados = habeas data (LXXII). ADI não é remédio do particular neste enunciado. Concurso é Art. 37, II.", alts: ["Isso é habeas data.", "Certo.", "ADI é controle concentrado.", "Fora do Art. 5º, LXVIII."] },
+  { id: "q118", disc: "Específicas", topic: "Fiscalização contábil", sub: "Controle externo municipal", level: "média", edital: ["esp-cf-leg"], art: "CF Arts. 31 e 70–71 (noções)", origin: "autoral", stem: "No recorte de noções do Anexo II, a fiscalização do Município, quanto ao controle externo, dá-se:", choices: ["Exclusivamente pelo Prefeito, sem a Câmara.", "Pela Câmara Municipal, com o auxílio do Tribunal de Contas competente, em paralelo ao modelo federal (Congresso + TCU).", "Somente pelo STF, em toda conta de almoxarifado.", "Pelo particular fiscalizado, com poder de polícia sobre a Câmara."], answer: 1, why: "Questão autoral. CF Art. 31: controle externo da Câmara com auxílio do tribunal de contas. Arts. 70–71 descrevem o paralelo federal. Não aprofunde LRF/Lei 4.320 (programa de outro cargo).", alts: ["O Executivo é fiscalizado.", "Certo, em noções.", "STF não é o órgão de contas municipal.", "Inverte fiscalizado e fiscalizador."] },
+  { id: "q119", disc: "Português", topic: "Variações linguísticas", sub: "Registro formal", level: "fácil", edital: ["pt-var"], art: "Anexo II · variações linguísticas", origin: "autoral", stem: "Em um ofício da Prefeitura, o registro esperado pela norma culta da prova é, em regra, o:", choices: ["Informal de conversa entre amigos, com gírias da região.", "Formal, adequado à situação de comunicação oficial, sem negar que existam outras variedades da língua.", "Exclusivamente oral, sem pontuação.", "Qualquer grafia, porque variação autoriza ignorar o Acordo Ortográfico."], answer: 1, why: "Questão autoral. A prova cobra adequação ao registro formal. Variação existe (regional, social, situacional), mas o ofício pede norma culta. O Acordo continua valendo.", alts: ["Inadequado ao gênero ofício.", "Certo.", "Ofício é escrito.", "Variação não anula o Acordo na prova."] },
+  { id: "q120", disc: "Específicas", topic: "Informática", sub: "Chrome", level: "fácil", edital: ["esp-info-so"], art: "Anexo II · Google Chrome", origin: "autoral", stem: "No Google Chrome, a navegação privada (anônima) serve, em noções, para:", choices: ["Apagar o Windows do disco.", "Não registrar, naquele perfil, o histórico local da sessão, sem garantir anonimato absoluto na rede.", "Formatar a RAM de forma permanente.", "Substituir o backup."], answer: 1, why: "Questão autoral. Modo anônimo: não guarda histórico local da sessão. Não formata SO nem RAM e não substitui backup. Não afirma anonimato total na internet.", alts: ["Não desinstala o SO.", "Certo.", "RAM não se formata assim.", "Backup é cópia de segurança."] }
+];
+MORE_BANK6.forEach((q) => BANK.push(q));
+
 function regradeStoredAnswers() {
   const ans = loadAnswers();
   let changed = false;
@@ -1927,17 +2072,105 @@ function renderSimHome() {
     </div>
     <details class="adv-filters">
       <summary>Como funciona a prova</summary>
-      <p>30 questões · 10 PT (peso 2) · 10 Legislação (peso 2) · 10 Específicas (peso 4) · 80 pontos · mínimo 40. Cronômetro de 3 horas. Questões de treino, não oficiais. 1º desempate: específicas.</p>
+      <p>30 questões · 10 PT (peso 2) · 10 Legislação (peso 2) · 10 Específicas (peso 4) · 80 pontos · mínimo 40. Cronômetro de 3 horas. Questões de treino, não oficiais. Desempate do edital: preferência legal (≥60 anos); depois específicas, português, legislação e maior idade.</p>
     </details>
     <article class="card">
       <h3>Histórico</h3>
-      ${hist.length ? "<ul>" + hist.map((h) => `<li>${h.when} · Simulado ${h.n} · ${h.score}/80 ${h.score >= 40 ? "(atingiu o mínimo)" : "(abaixo do mínimo)"} · PT ${h.pt} · Leg ${h.leg} · Esp ${h.esp}</li>`).join("") + "</ul>" : "<p>Nenhum simulado concluído ainda.</p>"}
-      ${hist.length >= 2 ? `<p>Último: ${hist[0].score}/80. Anterior: ${hist[1].score}/80. Diferença: ${hist[0].score - hist[1].score} ponto(s). Específicas (1º desempate): ${hist[0].esp} vs ${hist[1].esp}.</p>` : ""}
+      ${hist.length ? "<ul>" + hist.map((h) => {
+        const custom = !!h.custom;
+        const max = custom ? (h.total || h.score) : 80;
+        return `<li>${h.when} · ${custom ? h.n : "Simulado " + h.n} · ${h.score}/${max}${custom ? " (treino direcionado)" : (h.score >= 40 ? " (atingiu o mínimo)" : " (abaixo do mínimo)")} · PT ${h.pt} · Leg ${h.leg} · Esp ${h.esp}</li>`;
+      }).join("") + "</ul>" : "<p>Nenhum simulado concluído ainda.</p>"}
+      ${hist.length >= 2 ? `<p>Último: ${hist[0].score}/80. Anterior: ${hist[1].score}/80. Diferença: ${hist[0].score - hist[1].score} ponto(s). Após ≥60 anos, o 1º critério por nota é específicas: ${hist[0].esp} vs ${hist[1].esp}.</p>` : ""}
     </article>
   `;
   home.querySelectorAll("button[data-sim]").forEach((btn) => {
     btn.addEventListener("click", () => startSim(Number(btn.dataset.sim)));
   });
+  const customBox = document.createElement("article");
+  customBox.className = "card";
+  customBox.innerHTML = `
+    <h3>Treino direcionado (não é a prova)</h3>
+    <p>Não reproduz 10/10/10. Use para reforço. Gabarito só ao encerrar.</p>
+    <div class="filters" id="sim-custom">
+      <button type="button" class="chip" data-sc="Português">Só Português</button>
+      <button type="button" class="chip" data-sc="Legislação">Só Legislação</button>
+      <button type="button" class="chip" data-sc="Específicas">Só Específicas</button>
+      <button type="button" class="chip" data-sc="wrong">Erradas</button>
+      <button type="button" class="chip" data-sc="open">Não respondidas</button>
+      <button type="button" class="chip" data-sc="weak">Menor aproveitamento</button>
+      <button type="button" class="chip" data-sc="mix">Misto intercalado</button>
+    </div>
+    <label class="search-field" style="margin-top:10px">Assunto <select id="sim-topic"><option value="">Todos</option>${Array.from(new Set(BANK.map((q) => q.topic))).sort().map((t) => `<option value="${t}">${t}</option>`).join("")}</select></label>
+    <div class="q-nav"><button type="button" class="btn" id="sim-topic-go">Iniciar por assunto</button></div>
+  `;
+  home.appendChild(customBox);
+  customBox.querySelectorAll("[data-sc]").forEach((b) => b.addEventListener("click", () => startCustomSim(b.dataset.sc)));
+  const topicGo = document.getElementById("sim-topic-go");
+  if (topicGo) topicGo.addEventListener("click", () => {
+    const sel = document.getElementById("sim-topic");
+    if (sel && sel.value) startCustomSim("topic:" + sel.value);
+  });
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+function startCustomSim(kind) {
+  const ans = loadAnswers();
+  let pool = BANK.slice();
+  let title = "Treino direcionado";
+  if (kind === "Português" || kind === "Legislação" || kind === "Específicas") {
+    pool = pool.filter((q) => q.disc === kind);
+    title = "Treino · " + kind;
+  } else if (kind === "wrong") {
+    pool = pool.filter((q) => ans[q.id] && ans[q.id].ok === false);
+    title = "Treino · questões erradas";
+  } else if (kind === "open") {
+    pool = pool.filter((q) => !ans[q.id]);
+    title = "Treino · não respondidas";
+  } else if (kind === "weak") {
+    const weak = topicStats(2)[0];
+    pool = weak ? pool.filter((q) => q.topic === weak.topic) : [];
+    title = "Treino · menor aproveitamento" + (weak ? " · " + weak.topic : "");
+  } else if (kind === "mix") {
+    const buckets = ["Português", "Legislação", "Específicas"].map((d) => shuffle(pool.filter((q) => q.disc === d)));
+    const mixed = [];
+    const max = Math.max(buckets[0].length, buckets[1].length, buckets[2].length);
+    for (let i = 0; i < max; i++) buckets.forEach((b) => { if (b[i]) mixed.push(b[i]); });
+    pool = mixed;
+    title = "Treino misto intercalado";
+  } else if (String(kind).indexOf("topic:") === 0) {
+    const t = String(kind).slice(6);
+    pool = pool.filter((q) => q.topic === t);
+    title = "Treino · " + t;
+  }
+  pool = kind === "mix" ? pool.slice(0, 15) : shuffle(pool).slice(0, 15);
+  if (!pool.length) {
+    const home = document.getElementById("sim-home");
+    if (home) home.insertAdjacentHTML("afterbegin", `<article class="card warn"><h3>Sem questões neste recorte</h3><p>Troque o filtro do treino direcionado.</p></article>`);
+    return;
+  }
+  simState = { n: title, paper: pool, i: 0, choices: Array(pool.length).fill(null), start: Date.now(), left: Math.max(20 * 60, pool.length * 90), custom: true };
+  document.getElementById("sim-home").hidden = true;
+  document.getElementById("sim-run").hidden = false;
+  if (simTimer) clearInterval(simTimer);
+  simTimer = setInterval(() => {
+    if (!simState) return;
+    simState.left -= 1;
+    if (simState.left <= 0) finishSim(true);
+    else {
+      const t = document.getElementById("sim-timer");
+      if (t) t.textContent = formatTime(simState.left);
+    }
+  }, 1000);
+  renderSimRun();
 }
 
 function startSim(n) {
@@ -1975,9 +2208,11 @@ function renderSimRun() {
   if (!run || !simState) return;
   const q = simState.paper[simState.i];
   const ch = simState.choices[simState.i];
+  const total = simState.paper.length;
+  const custom = !!simState.custom;
   run.innerHTML = `
     <div class="sim-head">
-      <div><p class="phase">Simulado ${simState.n} · treino</p><p>${q.disc} · peso ${weightOf(q.disc)}</p></div>
+      <div><p class="phase">${custom ? simState.n : "Simulado " + simState.n} · treino${custom ? " direcionado" : ""}</p><p>${q.disc} · peso ${weightOf(q.disc)}${custom ? " · não é a prova oficial" : ""}</p></div>
       <div class="timer" id="sim-timer">${formatTime(simState.left)}</div>
     </div>
     <div class="q-grid">
@@ -1985,7 +2220,7 @@ function renderSimRun() {
     </div>
     <article class="q-card">
       <p class="tag">${q.topic} · ${q.art}</p>
-      <h3>${simState.i + 1}/30. ${q.stem}</h3>
+      <h3>${simState.i + 1}/${total}. ${q.stem}</h3>
       ${q.choices.map((c, i) => `<button class="q-opt ${ch === i ? "sel" : ""}" data-choice="${i}">${"ABCD"[i]}) ${c}</button>`).join("")}
       <div class="q-nav">
         <button class="btn" id="sim-prev">Anterior</button>
@@ -1996,8 +2231,8 @@ function renderSimRun() {
   `;
   run.querySelectorAll("button[data-jump]").forEach((b) => b.addEventListener("click", () => { simState.i = Number(b.dataset.jump); renderSimRun(); }));
   run.querySelectorAll("button[data-choice]").forEach((b) => b.addEventListener("click", () => { simState.choices[simState.i] = Number(b.dataset.choice); renderSimRun(); }));
-  document.getElementById("sim-prev").addEventListener("click", () => { simState.i = (simState.i + 29) % 30; renderSimRun(); });
-  document.getElementById("sim-next").addEventListener("click", () => { simState.i = (simState.i + 1) % 30; renderSimRun(); });
+  document.getElementById("sim-prev").addEventListener("click", () => { simState.i = (simState.i + total - 1) % total; renderSimRun(); });
+  document.getElementById("sim-next").addEventListener("click", () => { simState.i = (simState.i + 1) % total; renderSimRun(); });
   document.getElementById("sim-end").addEventListener("click", () => finishSim(false));
 }
 
@@ -2005,36 +2240,61 @@ function finishSim(auto) {
   if (!simState) return;
   if (simTimer) { clearInterval(simTimer); simTimer = null; }
   const paper = simState.paper;
-  let pt = 0, leg = 0, esp = 0, ptN = 0, legN = 0, espN = 0;
+  const custom = !!simState.custom;
+  const blank = paper.filter((_, i) => simState.choices[i] == null).length;
+  let pt = 0, leg = 0, esp = 0, ptN = 0, legN = 0, espN = 0, okN = 0;
+  const byTopic = {};
   paper.forEach((q, i) => {
     const ok = simState.choices[i] === q.answer;
-    const w = weightOf(q.disc);
+    const w = custom ? 1 : weightOf(q.disc);
     if (!ok) addToCaderno(q, simState.choices[i]);
+    if (ok) okN += 1;
+    byTopic[q.topic] = byTopic[q.topic] || { n: 0, ok: 0 };
+    byTopic[q.topic].n += 1;
+    if (ok) byTopic[q.topic].ok += 1;
     if (q.disc === "Português") { if (ok) pt += w; ptN += ok ? 1 : 0; }
     else if (q.disc === "Legislação") { if (ok) leg += w; legN += ok ? 1 : 0; }
     else { if (ok) esp += w; espN += ok ? 1 : 0; }
   });
   const score = pt + leg + esp;
+  const maxScore = custom ? paper.length : 80;
+  const used = Math.max(0, Math.round((Date.now() - (simState.start || Date.now())) / 1000));
   const rec = {
     n: simState.n,
     when: new Date().toLocaleString("pt-BR"),
     score, pt, leg, esp, ptN, legN, espN,
-    auto: !!auto
+    auto: !!auto,
+    custom,
+    total: paper.length,
+    okN,
+    blank,
+    used
   };
   const hist = loadSims();
   hist.unshift(rec);
   saveSims(hist.slice(0, 20));
+  const prev = hist[1];
+  const topicLines = Object.keys(byTopic).map((k) => {
+    const x = byTopic[k];
+    return k + ": " + x.ok + "/" + x.n;
+  }).slice(0, 8);
+  const weakNow = Object.keys(byTopic).map((k) => Object.assign({ k }, byTopic[k])).sort((a, b) => (a.ok / a.n) - (b.ok / b.n))[0];
   const run = document.getElementById("sim-run");
   run.hidden = false;
   document.getElementById("sim-home").hidden = true;
   run.innerHTML = `
-    <article class="card ${score >= 40 ? "good" : "bad"}">
-      <h3>${auto ? "Tempo esgotado. " : ""}Resultado · Simulado ${rec.n}</h3>
-      <p><b>${score}/80</b> · mínimo oficial 40. Meta 68–72. ${score >= 40 ? "Acima do corte." : "Abaixo do corte."}</p>
+    <article class="card ${(!custom && score >= 40) || (custom && okN * 2 >= paper.length) ? "good" : "bad"}">
+      <h3>${auto ? "Tempo esgotado. " : ""}Resultado · ${custom ? rec.n : "Simulado " + rec.n}</h3>
+      <p><b>${score}/${maxScore}</b>${custom ? " · treino direcionado (sem pesos oficiais)." : " · mínimo oficial 40. Meta 68–72. " + (score >= 40 ? "Acima do corte." : "Abaixo do corte.")}</p>
       <ul>
-        <li>Português: ${ptN}/10 acertos · ${pt} pts</li>
-        <li>Legislação: ${legN}/10 acertos · ${leg} pts</li>
-        <li>Específicas: ${espN}/10 acertos · ${esp} pts (1º desempate)</li>
+        <li>Acertos: ${okN}/${paper.length} · em branco: ${blank} · tempo: ${formatTime(used)}</li>
+        <li>Português: ${ptN} acerto(s) · ${pt} pts</li>
+        <li>Legislação: ${legN} acerto(s) · ${leg} pts</li>
+        <li>Específicas: ${espN} acerto(s) · ${esp} pts${custom ? "" : " (1º critério por nota, após preferência ≥60 anos)"}</li>
+        ${custom ? "" : "<li class='tree-meta'>Em seguida: Português, Legislação e maior idade. Habilitação = 40 pts, não é nomeação.</li>"}
+        ${topicLines.length ? "<li>Por assunto: " + topicLines.join(" · ") + "</li>" : ""}
+        ${weakNow ? "<li>Próximo reforço: " + weakNow.k + " (" + weakNow.ok + "/" + weakNow.n + ")</li>" : ""}
+        ${prev && !custom && !prev.custom ? "<li>Comparação: último " + rec.score + "/80 vs anterior " + prev.score + "/80.</li>" : ""}
       </ul>
       <button class="btn primary" id="sim-back">Voltar</button>
     </article>
@@ -2221,6 +2481,116 @@ function renderCaderno() {
 try { renderCaderno(); } catch (_) {}
 try { renderToday(); } catch (_) {}
 
+const cardsKey = "tango-fiscal-cards";
+function loadCards() {
+  try { return JSON.parse(lsGet(cardsKey) || "{}"); } catch { return {}; }
+}
+function saveCards(map) { lsSet(cardsKey, JSON.stringify(map)); }
+
+const CARDS = [
+  { id: "c01", disc: "Legislação", front: "Prazo de posse na Lei 946 (Art. 35)?", back: "30 dias da publicação da nomeação, prorrogável por igual período. Sem posse: nomeação sem efeito (Art. 35, §4º)." },
+  { id: "c02", disc: "Legislação", front: "Prazo de exercício na Lei 946 (Art. 36)?", back: "15 dias da posse, prorrogável por igual período. Sem exercício: exoneração de ofício (Art. 50, II)." },
+  { id: "c03", disc: "Legislação", front: "Validade do concurso na Lei 946 (Art. 14)?", back: "Até 2 anos da homologação, prorrogável uma vez por igual período." },
+  { id: "c04", disc: "Legislação", front: "7 formas de provimento (Art. 20)?", back: "Nomeação, recondução, reintegração, reversão, aproveitamento, promoção e readaptação. Exoneração NÃO é provimento." },
+  { id: "c05", disc: "Legislação", front: "Vacância (Art. 49) — hipóteses?", back: "Exoneração, demissão, readaptação, aposentadoria, falecimento e posse em cargo inacumulável." },
+  { id: "c06", disc: "Legislação", front: "Estágio probatório (Art. 39)?", back: "3 anos a contar do exercício. Insuficiência: exoneração (Art. 45), não demissão." },
+  { id: "c07", disc: "Legislação", front: "Sindicância × PAD — prazos?", back: "Sindicância 30+30 (Art. 231). PAD 60+60, comissão de 3 efetivos (Arts. 239 e 242)." },
+  { id: "c08", disc: "Legislação", front: "Abandono × inassiduidade (Art. 232)?", back: "Abandono: ausência intencional >30 dias consecutivos. Inassiduidade: 60 dias interpolados em 12 meses." },
+  { id: "c09", disc: "Legislação", front: "Prescrição da ação disciplinar (Art. 271)?", back: "5 anos (demissão/cassação/destituição), 2 anos (suspensão), 180 dias (advertência)." },
+  { id: "c10", disc: "Legislação", front: "Casamento / falecimento — Art. 176?", back: "8 dias cada, comprovação em até 48 horas da ocorrência." },
+  { id: "c11", disc: "Legislação", front: "Recurso administrativo (Art. 198)?", back: "15 dias da ciência. Se provido, efeitos retroagem." },
+  { id: "c12", disc: "Legislação", front: "LOM Art. 20, I e II?", back: "I: legislar sobre interesse local. II: suplementar legislação federal e estadual, no que couber." },
+  { id: "c13", disc: "Legislação", front: "Emenda à LOM (Art. 69)?", back: "Proposta de 2/3 dos vereadores, do Prefeito ou popular (5%). Dois turnos, 10 dias de interstício, 2/3 em cada turno." },
+  { id: "c14", disc: "Específicas", front: "LIMPE (CF Art. 37, caput)?", back: "Legalidade, impessoalidade, moralidade, publicidade e eficiência." },
+  { id: "c15", disc: "Específicas", front: "Elementos × atributos do ato?", back: "Elementos: COFIFOMO (competência, finalidade, forma, motivo, objeto). Atributos: presunção de legitimidade, imperatividade, autoexecutoriedade, tipicidade." },
+  { id: "c16", disc: "Específicas", front: "Anulação × revogação?", back: "Anulação: ilegalidade, ex tunc. Revogação: conveniência, ex nunc; só a Administração revoga." },
+  { id: "c17", disc: "Específicas", front: "Simples × complexo × composto?", back: "Simples: um órgão. Complexo: vontades de órgãos diversos num só ato. Composto: principal + acessório." },
+  { id: "c18", disc: "Específicas", front: "Vinculado × discricionário?", back: "Vinculado: a lei não deixa escolha. Discricionário: mérito (conveniência/oportunidade) nos limites da lei." },
+  { id: "c19", disc: "Específicas", front: "Bens públicos pela destinação?", back: "Uso comum (rua, praça), uso especial (repartição) e dominicais (patrimônio disponível)." },
+  { id: "c20", disc: "Específicas", front: "Improbidade após Lei 14.230/2021?", back: "Exige dolo. Culpa isolada não basta." },
+  { id: "c21", disc: "Específicas", front: "Phishing × ransomware × backup?", back: "Phishing: engenharia social. Ransomware: criptografa e pede resgate. Backup: cópia de segurança." },
+  { id: "c22", disc: "Específicas", front: "RAM × HD/SSD?", back: "RAM: volátil, trabalho rápido. HD/SSD: armazenamento permanente." },
+  { id: "c23", disc: "Específicas", front: "HC × habeas data × MS?", back: "HC: locomoção (LXVIII). Habeas data: dados em registro público (LXXII). MS: direito líquido e certo residual (LXIX)." },
+  { id: "c24", disc: "Português", front: "Crase: quando NÃO usar?", back: "A pé (masculino). À ela (pronome). Sentido aproximado 'a uma hora'." },
+  { id: "c25", disc: "Português", front: "Haver (=existir) e fazer (tempo)?", back: "Impessoais: havia irregularidades; faz dois anos. Não 'haviam' nem 'fazem' nesses sentidos." }
+];
+
+let cardFilter = "all";
+let cardI = 0;
+let cardShow = false;
+
+function renderFlashcards() {
+  const box = document.getElementById("cards-box");
+  if (!box) return;
+  const map = loadCards();
+  const now = Date.now();
+  let list = CARDS.filter((c) => cardFilter === "all" || c.disc === cardFilter);
+  const due = list.filter((c) => !map[c.id] || (map[c.id].due || 0) <= now);
+  if (!list.length) {
+    box.innerHTML = `<article class="card"><h3>Nenhum cartão neste filtro</h3></article>`;
+    return;
+  }
+  if (cardI >= list.length) cardI = 0;
+  const c = list[cardI];
+  const rec = map[c.id];
+  const isDue = !rec || (rec.due || 0) <= now;
+  box.innerHTML = `
+    <div class="dash dash-3">
+      <div class="stat"><b>${CARDS.length}</b><span>cartões objetivos</span></div>
+      <div class="stat"><b>${due.length}</b><span>para revisar agora neste filtro</span></div>
+      <div class="stat"><b>${Object.keys(map).length}</b><span>já praticados</span></div>
+    </div>
+    <div class="filters">
+      <button type="button" class="chip ${cardFilter === "all" ? "active" : ""}" data-cf2="all">Todos</button>
+      <button type="button" class="chip ${cardFilter === "Legislação" ? "active" : ""}" data-cf2="Legislação">Legislação</button>
+      <button type="button" class="chip ${cardFilter === "Específicas" ? "active" : ""}" data-cf2="Específicas">Específicas</button>
+      <button type="button" class="chip ${cardFilter === "Português" ? "active" : ""}" data-cf2="Português">Português</button>
+    </div>
+    <article class="q-card card-face">
+      <p class="tag">${c.disc} · ${cardI + 1}/${list.length}${isDue ? " · revisar" : ""}</p>
+      <h3>${c.front}</h3>
+      ${cardShow ? `<p class="explain"><b>Resposta.</b> ${c.back}</p>` : `<p class="tree-meta">Tente lembrar antes de revelar. Recuperação ativa.</p>`}
+      <div class="q-nav">
+        ${cardShow ? "" : `<button type="button" class="btn primary" id="card-show">Revelar</button>`}
+        ${cardShow ? `<button type="button" class="btn primary" id="card-ok">Lembrei</button><button type="button" class="btn" id="card-bad">Não lembrei</button>` : ""}
+        <button type="button" class="btn" id="card-prev">Anterior</button>
+        <button type="button" class="btn" id="card-next">Próximo</button>
+      </div>
+    </article>
+  `;
+  box.querySelectorAll("[data-cf2]").forEach((b) => b.addEventListener("click", () => { cardFilter = b.dataset.cf2; cardI = 0; cardShow = false; renderFlashcards(); }));
+  const sh = document.getElementById("card-show");
+  if (sh) sh.addEventListener("click", () => { cardShow = true; renderFlashcards(); });
+  const ok = document.getElementById("card-ok");
+  if (ok) ok.addEventListener("click", () => {
+    const m = loadCards();
+    const cur = m[c.id] || { step: 0 };
+    cur.step = Math.min((cur.step || 0) + 1, 3);
+    cur.last = Date.now();
+    const gap = cur.step === 1 ? 1 : cur.step === 2 ? 3 : 7;
+    cur.due = addDays(cur.last, gap);
+    m[c.id] = cur;
+    saveCards(m);
+    cardShow = false;
+    cardI = (cardI + 1) % list.length;
+    renderFlashcards();
+  });
+  const bad = document.getElementById("card-bad");
+  if (bad) bad.addEventListener("click", () => {
+    const m = loadCards();
+    m[c.id] = { step: 0, last: Date.now(), due: addDays(Date.now(), 1) };
+    saveCards(m);
+    cardShow = false;
+    cardI = (cardI + 1) % list.length;
+    renderFlashcards();
+  });
+  const prev = document.getElementById("card-prev");
+  if (prev) prev.addEventListener("click", () => { cardI = (cardI + list.length - 1) % list.length; cardShow = false; renderFlashcards(); });
+  const nxt = document.getElementById("card-next");
+  if (nxt) nxt.addEventListener("click", () => { cardI = (cardI + 1) % list.length; cardShow = false; renderFlashcards(); });
+}
+try { renderFlashcards(); } catch (_) {}
+
 function collectBackup() {
   const blocks = {};
   DAYS.forEach((d) => {
@@ -2240,7 +2610,9 @@ function collectBackup() {
     sims: loadSims(),
     caderno: loadCaderno(),
     review: loadReview(),
-    theme: currentTheme()
+    theme: currentTheme(),
+    cards: typeof loadCards === "function" ? loadCards() : {},
+    qfilters: lsGet(qFilterSaveKey) || null
   };
 }
 
@@ -2254,12 +2626,15 @@ function applyBackup(data) {
   if (data.caderno != null && !Array.isArray(data.caderno)) throw new Error("campo caderno inválido");
   if (data.blocks != null && (typeof data.blocks !== "object" || Array.isArray(data.blocks))) throw new Error("campo blocks inválido");
   if (data.review != null && (typeof data.review !== "object" || Array.isArray(data.review))) throw new Error("campo review inválido");
+  if (data.cards != null && (typeof data.cards !== "object" || Array.isArray(data.cards))) throw new Error("campo cards inválido");
   if (data.done) saveDone(data.done);
   if (data.edital) saveEdital(data.edital);
   if (data.answers) saveAnswers(data.answers);
   if (data.sims) saveSims(data.sims);
   if (data.caderno) saveCaderno(data.caderno);
   if (data.review) saveReview(data.review);
+  if (data.cards && typeof saveCards === "function") saveCards(data.cards);
+  if (data.qfilters && typeof data.qfilters === "string") lsSet(qFilterSaveKey, data.qfilters);
   if (data.theme === "dark" || data.theme === "light") applyTheme(data.theme, true);
   try { regradeStoredAnswers(); } catch (_) {}
   if (data.blocks) {
@@ -2339,6 +2714,7 @@ if (btnImport) {
         try { renderSimHome(); } catch (_) {}
         try { renderCobertura(); } catch (_) {}
         try { renderMateriais(); } catch (_) {}
+        try { renderFlashcards(); } catch (_) {}
         renderCaderno();
         try { renderStatsLive(); } catch (_) {}
       } catch (err) {

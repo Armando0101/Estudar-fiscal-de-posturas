@@ -156,7 +156,7 @@ const DAY_PLAN = {
   "2026-11-15": {
     weekday: "Domingo", longDate: "15 de novembro de 2026", discs: "Português e simulado 2",
     goal: "45 questões de PT + simulado 2 no formato da prova. Os 5 temas que mais derrubam mandam na semana 3.",
-    objectives: ["Fechar interpretação, crase, pontuação, concordância e regência em volume.", "Entregar o simulado 2 e comparar com o 1 (específicas = 1º desempate).", "Listar os 5 temas fracos."],
+    objectives: ["Fechar interpretação, crase, pontuação, concordância e regência em volume.", "Entregar o simulado 2 e comparar com o 1 (após ≥60 anos: específicas, depois PT, legislação e idade).", "Listar os 5 temas fracos."],
     videos: [v("interpTossan"), v("figuras")],
     qNeed: 45, qTopics: ["Interpretação", "Crase", "Pontuação", "Concordância", "Regência"],
     sim: 2,
