@@ -381,13 +381,19 @@ let uiDesempenho = "pesos";
 let uiConteudos = "edital";
 let qDetailOpen = false;
 let wantDrill = false;
+let qEdital = null;
+let pendingDrill = null;
+let covFilterDisc = "all";
+let covFilterPri = "all";
+let covFilterSit = "all";
+let covOpenId = null;
 
 function panelGroup(name) {
   if (name === "dia") return "calendario";
   if (name === "hoje" || name === "calendario" || name === "simulados" || name === "metodo") return name;
   if (name === "questoes") return "praticar";
   if (name === "caderno" || name === "pesos") return "desempenho";
-  if (name === "edital" || name === "materiais" || name === "prazos") return "conteudos";
+  if (name === "edital" || name === "cobertura" || name === "materiais" || name === "prazos") return "conteudos";
   return name;
 }
 
@@ -396,7 +402,7 @@ function syncNav(name) {
   if (name === "questoes") uiPraticar = wantDrill ? "treino" : "questoes";
   if (name === "caderno") uiDesempenho = uiDesempenho === "revisoes" ? "revisoes" : "caderno";
   if (name === "pesos") uiDesempenho = "pesos";
-  if (name === "edital" || name === "materiais" || name === "prazos") uiConteudos = name;
+  if (name === "edital" || name === "cobertura" || name === "materiais" || name === "prazos") uiConteudos = name;
   document.querySelectorAll(".nav-btn[data-nav]").forEach((b) => {
     b.classList.toggle("active", b.dataset.nav === uiGroup || (uiGroup === "metodo" && b.dataset.nav === "mais"));
   });
@@ -438,6 +444,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
       if (btn.dataset.panel === "simulados" && typeof renderSimHome === "function") renderSimHome();
       if (btn.dataset.panel === "caderno" && typeof renderCaderno === "function") renderCaderno();
       if (btn.dataset.panel === "edital" && typeof renderEdital === "function") renderEdital();
+      if (btn.dataset.panel === "cobertura" && typeof renderCobertura === "function") renderCobertura();
       if (btn.dataset.panel === "pesos" && typeof renderStatsLive === "function") renderStatsLive();
     } catch (err) {
       const panel = document.getElementById(btn.dataset.panel);
@@ -537,6 +544,25 @@ function dashStats() {
   return { blocksOn, blocksAll, answered: answered.length, okN, pct, weakName, due, sims, hours, bank: bankLen };
 }
 
+function coverageSummary() {
+  const official = EDITAL.filter((e) => (e.cat || "oficial") === "oficial" || e.cat === "anexo1");
+  const rows = official.map((e) => Object.assign({ e: e }, topicCoverage(e)));
+  const withMat = rows.filter((r) => r.hasNote).length;
+  const withQ = rows.filter((r) => r.qs.length > 0).length;
+  const concluded = rows.filter((r) => r.sit === "concluida").length;
+  const highOpen = rows.filter((r) => r.e.pri === "alta" && r.sit !== "concluida")[0];
+  const weak = rows.filter((r) => r.pct != null && r.answered >= 2).sort((a, b) => a.pct - b.pct)[0];
+  const discs = {};
+  rows.forEach((r) => {
+    discs[r.e.disc] = discs[r.e.disc] || { n: 0, mat: 0, q: 0, done: 0 };
+    discs[r.e.disc].n += 1;
+    if (r.hasNote) discs[r.e.disc].mat += 1;
+    if (r.qs.length) discs[r.e.disc].q += 1;
+    if (r.sit === "concluida") discs[r.e.disc].done += 1;
+  });
+  return { rows, withMat, withQ, concluded, total: rows.length, highOpen, weak, discs, pct: Math.round(concluded * 100 / rows.length) };
+}
+
 function renderToday() {
   const id = todayIso();
   const day = DAYS.find((d) => d.id === id) || DAYS[0];
@@ -546,6 +572,8 @@ function renderToday() {
   const dsh = dashStats();
   const el = document.getElementById("hoje");
   const tasks = (day.blocks || []).map((b) => (b.when.split("·")[1] || b.when).trim());
+  let cov = { total: 0, withMat: 0, withQ: 0, concluded: 0, pct: 0, discs: {}, highOpen: null, weak: null };
+  try { cov = coverageSummary(); } catch (_) {}
   el.innerHTML = `
     <article class="card next-step">
       <p class="phase">Seu próximo passo</p>
@@ -563,6 +591,20 @@ function renderToday() {
       <div class="stat"><b>${dsh.answered}</b><span>questões respondidas · ${dsh.pct}% de acerto</span></div>
       <div class="stat"><b>${dsh.due}</b><span>revisões pendentes hoje</span></div>
     </div>
+    <article class="card">
+      <h3>Cobertura real do edital</h3>
+      <p>${cov.concluded}/${cov.total} tópicos com cobertura concluída (${cov.pct}%). Material: ${cov.withMat}/${cov.total}. Questões: ${cov.withQ}/${cov.total}. O percentual não é só questões respondidas: exige material, exercícios e marca de estudo.</p>
+      <ul>
+        ${Object.keys(cov.discs).map((d) => `<li><b>${d}:</b> ${cov.discs[d].done}/${cov.discs[d].n} concluídos · ${cov.discs[d].q} com questões</li>`).join("")}
+      </ul>
+      <p><b>Prioridade alta em aberto:</b> ${cov.highOpen ? cov.highOpen.e.topic : "nenhuma (ou ainda sem matriz)."}</p>
+      <p><b>Menor aproveitamento:</b> ${cov.weak ? cov.weak.e.topic + " · " + cov.weak.pct + "%" : "ainda sem amostra de 2 respostas em um tópico da matriz."}</p>
+      <p class="tree-meta">Revisões pendentes: ${dsh.due}. Próximo passo do cronograma: ${day.title}.</p>
+      <div class="q-nav">
+        <button type="button" class="btn primary" data-home="cobertura">Abrir cobertura</button>
+        ${cov.highOpen ? `<button type="button" class="btn gold" id="home-high">Estudar prioridade alta</button>` : ""}
+      </div>
+    </article>
     <p class="phase" style="margin:4px 0 8px">Acesso rápido</p>
     <div class="quick-actions">
       <button type="button" class="btn" data-home="calendario">Continuar cronograma</button>
@@ -583,6 +625,11 @@ function renderToday() {
       else if (t === "caderno") { uiDesempenho = "caderno"; goPanel("caderno"); }
       else goPanel(t);
     });
+  });
+  const highBtn = document.getElementById("home-high");
+  if (highBtn && cov.highOpen) highBtn.addEventListener("click", () => {
+    covOpenId = cov.highOpen.e.id;
+    goPanel("cobertura");
   });
 }
 
@@ -634,42 +681,46 @@ function loadEdital() {
 function saveEdital(map) { lsSet(editalKey, JSON.stringify(map)); }
 
 const EDITAL = [
-  { id: "pt-interp", disc: "Língua Portuguesa", pri: "alta", topic: "Leitura e interpretação de texto (ideia principal, explícito, implícito, sem extrapolação)" },
-  { id: "pt-var", disc: "Língua Portuguesa", pri: "média", topic: "Variações linguísticas e funções da linguagem" },
-  { id: "pt-gen", disc: "Língua Portuguesa", pri: "média", topic: "Tipos e gêneros de texto; coesão e coerência" },
-  { id: "pt-orto", disc: "Língua Portuguesa", pri: "alta", topic: "Ortografia do Acordo: letras, maiúsculas, acentuação, pontuação" },
-  { id: "pt-fono", disc: "Língua Portuguesa", pri: "média", topic: "Fonologia/fonética: letra/fonema, encontros vocálicos e consonantais, dígrafos (Anexo II)" },
-  { id: "pt-morf", disc: "Língua Portuguesa", pri: "média", topic: "Morfologia: elementos mórficos, formação e classes de palavras" },
-  { id: "pt-sint", disc: "Língua Portuguesa", pri: "alta", topic: "Sintaxe: termos, coordenadas/subordinadas, concordância, regência, crase" },
-  { id: "pt-sem", disc: "Língua Portuguesa", pri: "média", topic: "Semântica: denotação, conotação, sinonímia, antonímia, homonímia, paronímia, polissemia e ambiguidade" },
-  { id: "pt-fig", disc: "Língua Portuguesa", pri: "média", topic: "Figuras de linguagem (Anexo II, ensino médio)" },
-  { id: "leg-946-inv", disc: "Legislação", pri: "alta", topic: "Lei 946: investidura, concurso, posse e exercício (Arts. 13–38)" },
-  { id: "leg-946-prov", disc: "Legislação", pri: "alta", topic: "Lei 946: 7 formas de provimento e vacância (Arts. 20–32 e 49–53)" },
-  { id: "leg-946-est", disc: "Legislação", pri: "alta", topic: "Lei 946: estágio probatório e estabilidade (Arts. 39–48)" },
-  { id: "leg-946-dir", disc: "Legislação", pri: "média", topic: "Lei 946: direitos, vantagens, licenças e concessões" },
-  { id: "leg-946-disc", disc: "Legislação", pri: "alta", topic: "Lei 946: deveres, proibições, penalidades, sindicância e PAD (Arts. 204–271)" },
-  { id: "leg-lom", disc: "Legislação", pri: "alta", topic: "Lei Orgânica: competências do Município, Prefeito e Câmara; bens municipais" },
-  { id: "esp-cf-pf", disc: "Específicas", pri: "alta", topic: "CF Arts. 1º–4º: princípios fundamentais" },
-  { id: "esp-cf-5", disc: "Específicas", pri: "alta", topic: "CF Art. 5º: direitos e garantias; remédios constitucionais" },
-  { id: "esp-cf-mun", disc: "Específicas", pri: "alta", topic: "CF Arts. 18–31: organização do Estado, Municípios (29–31)" },
-  { id: "esp-cf-adm", disc: "Específicas", pri: "alta", topic: "CF Arts. 37–41: Administração Pública e servidores" },
-  { id: "esp-cf-leg", disc: "Específicas", pri: "média", topic: "CF: Poder Legislativo e fiscalização contábil, financeira e orçamentária (noções; Arts. 44–75)" },
-  { id: "esp-cf-fin", disc: "Específicas", pri: "média", topic: "CF: tributação, orçamento e finanças públicas (noções; Arts. 145–169). Não é o programa de Agente de Controle Interno" },
-  { id: "esp-adm-prin", disc: "Específicas", pri: "alta", topic: "Princípios administrativos (LIMPE) e administração direta/indireta" },
-  { id: "esp-adm-atos", disc: "Específicas", pri: "alta", topic: "Atos: elementos, atributos, validade/eficácia, classificação, anulação/revogação" },
-  { id: "esp-adm-ag", disc: "Específicas", pri: "alta", topic: "Agentes públicos; direitos, deveres e responsabilidades" },
-  { id: "esp-adm-imp", disc: "Específicas", pri: "alta", topic: "Improbidade administrativa (Lei 8.429 com 14.230/21)" },
-  { id: "esp-adm-bens", disc: "Específicas", pri: "alta", topic: "Bens públicos: comum, especial, dominical" },
-  { id: "esp-etica", disc: "Específicas", pri: "média", topic: "Ética profissional no serviço público" },
-  { id: "esp-info-hw", disc: "Específicas", pri: "alta", topic: "Informática: hardware, impressoras, scanners, multifuncionais" },
-  { id: "esp-info-so", disc: "Específicas", pri: "alta", topic: "Informática: Windows, Office, Internet Explorer e Chrome" },
-  { id: "esp-info-seg", disc: "Específicas", pri: "alta", topic: "Informática: segurança da informação (malware, phishing, backup)" },
-  { id: "esp-anexo1", disc: "Específicas", pri: "alta", topic: "Anexo I: atribuições do Fiscal de Posturas (não confundir com Tributos/Meio Ambiente)", cat: "anexo1" },
-  { id: "esp-adm-atos-class", disc: "Específicas", pri: "alta", topic: "Classificação dos atos: simples/complexos/compostos; uni/bi/multilaterais; gerais/individuais; vinculados/discricionários" },
-  { id: "esp-adm-proc", disc: "Específicas", pri: "média", topic: "Procedimento administrativo na formação do ato (Anexo II)" },
-  { id: "esp-adm-prov-vac", disc: "Específicas", pri: "alta", topic: "Formas de provimento e vacância dos cargos públicos (Anexo II de específicas; cruzar com Lei 946 Arts. 20 e 49)" },
-  { id: "leg-946-pet", disc: "Legislação", pri: "média", topic: "Lei 946: direito de petição e recurso (15 dias, Arts. 198–199)" },
-  { id: "comp-657", disc: "Complementar", pri: "baixa", topic: "Lei 657/2007 — Código de Posturas (NÃO está no Anexo II; só para entender a função)", cat: "complementar" }
+  { id: "pt-interp", disc: "Língua Portuguesa", pri: "alta", evid: "proxima", recQ: 8, bankTopics: ["Interpretação"], topic: "Leitura e interpretação de texto (ideia principal, explícito, implícito, sem extrapolação)" },
+  { id: "pt-var", disc: "Língua Portuguesa", pri: "cobertura", evid: "insuficiente", recQ: 3, bankTopics: ["Variações linguísticas"], topic: "Variações linguísticas" },
+  { id: "pt-func", disc: "Língua Portuguesa", pri: "média", evid: "insuficiente", recQ: 5, bankTopics: ["Funções da linguagem"], topic: "Funções da linguagem" },
+  { id: "pt-gen", disc: "Língua Portuguesa", pri: "média", evid: "insuficiente", recQ: 5, bankTopics: ["Tipos e gêneros"], topic: "Tipos e gêneros de texto" },
+  { id: "pt-coes", disc: "Língua Portuguesa", pri: "média", evid: "insuficiente", recQ: 5, bankTopics: ["Coesão", "Coerência"], topic: "Coesão e coerência textuais" },
+  { id: "pt-orto", disc: "Língua Portuguesa", pri: "alta", evid: "proxima", recQ: 8, bankTopics: ["Ortografia", "Pontuação"], topic: "Ortografia do Acordo: letras, maiúsculas, acentuação, pontuação" },
+  { id: "pt-fono", disc: "Língua Portuguesa", pri: "cobertura", evid: "insuficiente", recQ: 5, bankTopics: ["Fonologia"], topic: "Fonologia/fonética: letra/fonema, encontros vocálicos e consonantais, dígrafos (Anexo II)" },
+  { id: "pt-morf", disc: "Língua Portuguesa", pri: "média", evid: "proxima", recQ: 5, bankTopics: ["Formação", "Morfologia"], topic: "Morfologia: elementos mórficos, formação e classes de palavras" },
+  { id: "pt-sint", disc: "Língua Portuguesa", pri: "alta", evid: "proxima", recQ: 10, bankTopics: ["Concordância", "Regência", "Crase", "Sintaxe", "Termos da oração", "Orações"], topic: "Sintaxe: termos, coordenadas/subordinadas, concordância, regência, crase" },
+  { id: "pt-sem", disc: "Língua Portuguesa", pri: "média", evid: "insuficiente", recQ: 5, bankTopics: ["Semântica"], topic: "Semântica: denotação, conotação, sinonímia, antonímia, homonímia, paronímia, polissemia e ambiguidade" },
+  { id: "pt-fig", disc: "Língua Portuguesa", pri: "cobertura", evid: "insuficiente", recQ: 4, bankTopics: ["Figuras"], topic: "Figuras de linguagem (Anexo II, ensino médio)" },
+  { id: "leg-946-inv", disc: "Legislação", pri: "alta", evid: "hipotese", recQ: 8, bankTopics: ["Posse", "Exercício", "Concurso", "Investidura"], topic: "Lei 946: investidura, concurso, posse e exercício (Arts. 13–38)" },
+  { id: "leg-946-prov", disc: "Legislação", pri: "alta", evid: "hipotese", recQ: 8, bankTopics: ["Provimento", "Vacância", "Recondução", "Reversão", "Nomeação", "Readaptação"], topic: "Lei 946: 7 formas de provimento e vacância (Arts. 20–32 e 49–53)" },
+  { id: "leg-946-est", disc: "Legislação", pri: "alta", evid: "hipotese", recQ: 5, bankTopics: ["Estágio", "Estabilidade"], topic: "Lei 946: estágio probatório e estabilidade (Arts. 39–48)" },
+  { id: "leg-946-dir", disc: "Legislação", pri: "média", evid: "insuficiente", recQ: 5, bankTopics: ["Direitos", "Licenças"], topic: "Lei 946: direitos, vantagens, licenças e concessões" },
+  { id: "leg-946-disc", disc: "Legislação", pri: "alta", evid: "hipotese", recQ: 10, bankTopics: ["PAD", "Penalidades", "Abandono", "Prescrição", "Acumulação", "Proibições"], topic: "Lei 946: deveres, proibições, penalidades, sindicância e PAD (Arts. 204–271)" },
+  { id: "leg-946-pet", disc: "Legislação", pri: "média", evid: "insuficiente", recQ: 4, bankTopics: ["Recurso", "Petição"], topic: "Lei 946: direito de petição e recurso (15 dias, Arts. 198–199)" },
+  { id: "leg-lom", disc: "Legislação", pri: "alta", evid: "proxima", recQ: 6, bankTopics: ["Lei Orgânica"], topic: "Lei Orgânica: competências do Município (Art. 20)" },
+  { id: "leg-lom-cam", disc: "Legislação", pri: "alta", evid: "proxima", recQ: 4, bankTopics: ["Lei Orgânica"], subs: ["Câmara", "Emenda à LOM"], topic: "Lei Orgânica: Câmara de Vereadores (Art. 43) e emenda (Art. 69)" },
+  { id: "leg-lom-pref", disc: "Legislação", pri: "alta", evid: "hipotese", recQ: 4, bankTopics: ["Lei Orgânica"], subs: ["Prefeito"], topic: "Lei Orgânica: atribuições do Prefeito (Art. 94)" },
+  { id: "esp-cf-pf", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 5, bankTopics: ["CF 1º", "CF poderes"], topic: "CF Arts. 1º–4º: princípios fundamentais" },
+  { id: "esp-cf-5", disc: "Específicas", pri: "alta", evid: "hipotese", recQ: 5, bankTopics: ["CF 5º"], topic: "CF Art. 5º: direitos e garantias; remédios constitucionais" },
+  { id: "esp-cf-mun", disc: "Específicas", pri: "alta", evid: "hipotese", recQ: 5, bankTopics: ["Municípios", "Organização do Estado"], topic: "CF Arts. 18–31: organização do Estado, Municípios (29–31)" },
+  { id: "esp-cf-adm", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 8, bankTopics: ["CF 37", "Servidores CF"], topic: "CF Arts. 37–41: Administração Pública e servidores" },
+  { id: "esp-cf-leg", disc: "Específicas", pri: "cobertura", evid: "proxima", recQ: 4, bankTopics: ["Fiscalização contábil"], topic: "CF: Poder Legislativo e fiscalização contábil, financeira e orçamentária (noções; Arts. 44–75)" },
+  { id: "esp-cf-fin", disc: "Específicas", pri: "cobertura", evid: "insuficiente", recQ: 4, bankTopics: ["Orçamento"], topic: "CF: tributação, orçamento e finanças públicas (noções; Arts. 145–169). Não é o programa de Agente de Controle Interno" },
+  { id: "esp-adm-prin", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 6, bankTopics: ["Administração"], topic: "Princípios administrativos (LIMPE) e administração direta/indireta" },
+  { id: "esp-adm-atos", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 8, bankTopics: ["Atos"], topic: "Atos: elementos, atributos, validade/eficácia, anulação/revogação" },
+  { id: "esp-adm-atos-class", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 8, bankTopics: ["Atos"], subs: ["Simples, complexo e composto", "Gerais e individuais", "Unilaterais", "Poder de polícia"], topic: "Classificação dos atos: simples/complexos/compostos; uni/bi/multilaterais; gerais/individuais; vinculados/discricionários" },
+  { id: "esp-adm-proc", disc: "Específicas", pri: "cobertura", evid: "insuficiente", recQ: 3, bankTopics: ["Procedimento"], topic: "Procedimento administrativo na formação do ato (Anexo II)" },
+  { id: "esp-adm-ag", disc: "Específicas", pri: "média", evid: "insuficiente", recQ: 5, bankTopics: ["Agentes públicos"], topic: "Agentes públicos; servidor e funcionário; direitos, deveres e responsabilidades" },
+  { id: "esp-adm-imp", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 5, bankTopics: ["Improbidade"], topic: "Improbidade administrativa (Lei 8.429 com 14.230/21)" },
+  { id: "esp-adm-bens", disc: "Específicas", pri: "média", evid: "insuficiente", recQ: 4, bankTopics: ["Bens públicos"], topic: "Bens públicos: comum, especial, dominical" },
+  { id: "esp-adm-prov-vac", disc: "Específicas", pri: "alta", evid: "hipotese", recQ: 5, bankTopics: ["Provimento CF"], topic: "Formas de provimento e vacância dos cargos públicos (Anexo II de específicas; cruzar com Lei 946 Arts. 20 e 49)" },
+  { id: "esp-etica", disc: "Específicas", pri: "média", evid: "insuficiente", recQ: 4, bankTopics: ["Ética"], topic: "Ética profissional no serviço público" },
+  { id: "esp-info-hw", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 6, bankTopics: ["Informática"], subs: ["Hardware", "Impressoras"], topic: "Informática: hardware, impressoras, scanners, multifuncionais" },
+  { id: "esp-info-so", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 8, bankTopics: ["Informática"], subs: ["Windows", "Office", "Internet Explorer", "Google Chrome"], topic: "Informática: Windows, Office, Internet Explorer e Chrome" },
+  { id: "esp-info-seg", disc: "Específicas", pri: "alta", evid: "proxima", recQ: 5, bankTopics: ["Informática"], subs: ["Ransomware"], topic: "Informática: segurança da informação (malware, phishing, backup)" },
+  { id: "esp-anexo1", disc: "Específicas", pri: "alta", evid: "direta", recQ: 8, bankTopics: ["Anexo I"], topic: "Anexo I: atribuições do Fiscal de Posturas (não confundir com Tributos/Meio Ambiente)", cat: "anexo1" },
+  { id: "comp-657", disc: "Complementar", pri: "baixa", evid: "fora", recQ: 0, bankTopics: [], topic: "Lei 657/2007 — Código de Posturas (NÃO está no Anexo II; só para entender a função)", cat: "complementar" }
 ];
 
 function editalDone(rec) {
@@ -688,41 +739,56 @@ function qForTopic(e) {
     if (e.disc === "Língua Portuguesa" && q.disc !== "Português") return false;
     if (e.disc === "Legislação" && q.disc !== "Legislação") return false;
     if (e.disc === "Específicas" && q.disc !== "Específicas") return false;
+    if (Array.isArray(q.edital) && q.edital.length) return q.edital.indexOf(e.id) >= 0;
+    if (Array.isArray(e.bankTopics) && e.bankTopics.length) {
+      const topicOk = e.bankTopics.indexOf(q.topic) >= 0;
+      if (!topicOk) return false;
+      if (Array.isArray(e.subs) && e.subs.length) {
+        const sub = String(q.sub || "").toLowerCase();
+        if (sub) return e.subs.some((s) => sub.indexOf(String(s).toLowerCase()) >= 0);
+      } else {
+        return true;
+      }
+    }
     const blob = (q.topic + " " + (q.art || "") + " " + (q.sub || "")).toLowerCase();
-    const keys = (e.topic + " " + e.id).toLowerCase();
     const hints = {
       "pt-interp": ["interpretação", "texto"],
       "pt-var": ["varia"],
-      "pt-gen": ["coesão", "gênero"],
-      "pt-orto": ["ortografia", "acentu"],
+      "pt-func": ["função"],
+      "pt-gen": ["gênero", "tipos"],
+      "pt-coes": ["coesão", "coerência"],
+      "pt-orto": ["ortografia", "acentu", "pontuação"],
       "pt-fono": ["fonolog", "dígrafo", "fonema"],
       "pt-morf": ["formação", "morfolog"],
-      "pt-sint": ["concordância", "regência", "crase", "pontuação"],
+      "pt-sint": ["concordância", "regência", "crase", "sintaxe"],
       "pt-sem": ["semântica", "conotativ", "denotativ"],
       "pt-fig": ["figura"],
       "leg-946-inv": ["posse", "exercício", "concurso", "investidura"],
-      "leg-946-prov": ["provimento", "vacância", "recondução", "reversão"],
-      "leg-946-est": ["estágio"],
-      "leg-946-dir": ["casamento", "falecimento"],
-      "leg-946-disc": ["pad", "sindicância", "abandono", "prescrição", "penalidad"],
+      "leg-946-prov": ["provimento", "vacância", "recondução", "reversão", "nomeação", "readaptação"],
+      "leg-946-est": ["estágio", "estabilidade"],
+      "leg-946-dir": ["casamento", "falecimento", "licença"],
+      "leg-946-disc": ["pad", "sindicância", "abandono", "prescrição", "penalidad", "proibi"],
       "leg-946-pet": ["recurso", "petição"],
-      "leg-lom": ["orgânica", "município", "câmara"],
-      "esp-cf-pf": ["art. 1", "fundamento", "república"],
+      "leg-lom": ["orgânica", "art. 20"],
+      "leg-lom-cam": ["câmara", "emenda"],
+      "leg-lom-pref": ["prefeito"],
+      "esp-cf-pf": ["art. 1", "fundamento", "art. 2"],
       "esp-cf-5": ["art. 5"],
-      "esp-cf-mun": ["município", "art. 29"],
+      "esp-cf-mun": ["município", "art. 29", "art. 18"],
       "esp-cf-adm": ["art. 37", "estável", "servidor"],
       "esp-cf-leg": ["legislativ", "fiscalização"],
       "esp-cf-fin": ["orçamento", "finança", "tribut"],
-      "esp-adm-prin": ["limpe", "princípio"],
+      "esp-adm-prin": ["limpe", "princípio", "direta"],
       "esp-adm-atos": ["ato", "atributo", "anulação", "revogação", "autoexecut"],
-      "esp-adm-atos-class": ["vinculado", "discricionár"],
+      "esp-adm-atos-class": ["vinculado", "discricionár", "simples", "complexo", "unilateral"],
+      "esp-adm-proc": ["procedimento"],
       "esp-adm-ag": ["agente"],
       "esp-adm-imp": ["improbidade"],
       "esp-adm-bens": ["bens públicos"],
       "esp-etica": ["ética"],
-      "esp-info-hw": ["ram", "hardware"],
-      "esp-info-so": ["windows", "office"],
-      "esp-info-seg": ["phishing", "backup", "segurança"],
+      "esp-info-hw": ["ram", "hardware", "scanner", "impressora"],
+      "esp-info-so": ["windows", "office", "explorer", "chrome"],
+      "esp-info-seg": ["phishing", "backup", "segurança", "ransomware"],
       "esp-anexo1": ["anexo i", "circo", "ambulante", "iss"],
       "esp-adm-prov-vac": ["provimento", "vacância"]
     }[e.id] || [];
@@ -764,10 +830,11 @@ function renderEdital() {
               <span>
                 <span class="pri">${e.pri}${at ? " · estudado em " + at : " · falta marcar"}</span><br>${e.topic}
                 <span class="tree-meta">${qs.length ? qs.length + " questão(ões) ligadas" : "sem questão ligada ainda"}${pct != null ? " · " + pct + "% de acerto (" + ok + "/" + answered.length + ")" : ""}</span>
-                <span class="links">
-                  ${qs.length ? `<button type="button" data-goq="${e.id}">Resolver</button>` : ""}
-                  <button type="button" data-gom="materiais">Materiais</button>
-                </span>
+                 <span class="links">
+                   ${qs.length ? `<button type="button" data-goq="${e.id}">Resolver</button>` : ""}
+                   <button type="button" data-gocov="${e.id}">Cobertura</button>
+                   <button type="button" data-gom="materiais">Materiais</button>
+                 </span>
               </span>
             </div>`;
           }).join("")}
@@ -784,12 +851,12 @@ function renderEdital() {
     });
   });
   box.querySelectorAll("button[data-goq]").forEach((btn) => {
+    btn.addEventListener("click", () => openTopicQuestions(btn.dataset.goq));
+  });
+  box.querySelectorAll("button[data-gocov]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const item = EDITAL.find((e) => e.id === btn.dataset.goq);
-      if (!item) return;
-      qFilter = item.disc === "Língua Portuguesa" ? "Português" : item.disc === "Legislação" ? "Legislação" : "Específicas";
-      qIndex = 0;
-      goPanel("questoes");
+      covOpenId = btn.dataset.gocov;
+      goPanel("cobertura");
     });
   });
   box.querySelectorAll("button[data-gom]").forEach((btn) => {
@@ -797,6 +864,162 @@ function renderEdital() {
       goPanel("materiais");
     });
   });
+}
+
+function openTopicQuestions(id) {
+  const item = EDITAL.find((e) => e.id === id);
+  if (!item) return;
+  qEdital = id;
+  qFilter = item.disc === "Língua Portuguesa" ? "Português" : item.disc === "Legislação" ? "Legislação" : item.disc === "Específicas" ? "Específicas" : "all";
+  qTopic = "all";
+  qIndex = 0;
+  qPick = null;
+  wantDrill = false;
+  uiPraticar = "questoes";
+  goPanel("questoes");
+}
+
+function openTopicDrill(id) {
+  const item = EDITAL.find((e) => e.id === id);
+  if (!item) return;
+  pendingDrill = { src: "edital:" + id, n: 10 };
+  qEdital = id;
+  wantDrill = true;
+  uiPraticar = "treino";
+  goPanel("questoes");
+}
+
+function topicCoverage(e) {
+  const map = loadEdital();
+  const ans = loadAnswers();
+  const qs = qForTopic(e);
+  const answered = qs.filter((q) => ans[q.id]);
+  const ok = answered.filter((q) => ans[q.id] && ans[q.id].ok).length;
+  const pct = answered.length ? Math.round(ok * 100 / answered.length) : null;
+  const hasNote = !!NOTES[e.id];
+  const rec = e.recQ || 0;
+  const doneMark = editalDone(map[e.id]);
+  let sit = "nao";
+  if (e.cat === "complementar") sit = "comp";
+  else if (hasNote && qs.length >= Math.max(3, Math.min(rec, 3)) && answered.length >= 2 && doneMark) sit = "concluida";
+  else if (hasNote && qs.length && answered.length) sit = "estudo";
+  else if (hasNote && qs.length) sit = "questoes";
+  else if (hasNote) sit = "material";
+  return { qs, answered: answered.length, ok, pct, hasNote, rec, doneMark, sit };
+}
+
+function sitLabel(sit) {
+  return ({
+    nao: "Não iniciado",
+    material: "Material disponível",
+    questoes: "Questões disponíveis",
+    estudo: "Em estudo",
+    concluida: "Cobertura concluída",
+    comp: "Complementar"
+  })[sit] || sit;
+}
+
+function evidLabel(ev) {
+  return ({
+    direta: "Evidência direta (Fiscal de Posturas IBDO)",
+    proxima: "Evidência próxima / briefing da amostra",
+    hipotese: "Hipótese de relevância (edital + cargo)",
+    insuficiente: "Sem evidência suficiente na amostra",
+    fora: "Fora do Anexo II"
+  })[ev] || "Sem evidência suficiente na amostra";
+}
+
+function renderCobertura() {
+  const box = document.getElementById("cobertura-box");
+  if (!box) return;
+  const official = EDITAL.filter((e) => (e.cat || "oficial") === "oficial" || e.cat === "anexo1");
+  const rows = official.map((e) => Object.assign({ e: e }, topicCoverage(e)));
+  const withMat = rows.filter((r) => r.hasNote).length;
+  const withQ = rows.filter((r) => r.qs.length > 0).length;
+  const withWhy = rows.filter((r) => r.qs.length && r.qs.every((q) => q.why)).length;
+  const concluded = rows.filter((r) => r.sit === "concluida").length;
+  const list = rows.filter((r) => {
+    if (covFilterDisc !== "all" && r.e.disc !== covFilterDisc) return false;
+    if (covFilterPri !== "all" && r.e.pri !== covFilterPri) return false;
+    if (covFilterSit === "semq" && r.qs.length) return false;
+    if (covFilterSit === "nao" && r.sit !== "nao" && r.sit !== "material") return false;
+    if (covFilterSit === "baixo" && !(r.pct != null && r.pct < 70 && r.answered >= 2)) return false;
+    if (covFilterSit === "ok" && r.sit !== "concluida") return false;
+    return true;
+  });
+  const open = covOpenId ? EDITAL.find((e) => e.id === covOpenId) : null;
+  const openCov = open ? topicCoverage(open) : null;
+  box.innerHTML = `
+    <div class="dash dash-3">
+      <div class="stat"><b>${withMat}/${rows.length}</b><span>tópicos com material</span></div>
+      <div class="stat"><b>${withQ}/${rows.length}</b><span>tópicos com questões</span></div>
+      <div class="stat"><b>${concluded}/${rows.length}</b><span>cobertura concluída (material + questões + prática + marca)</span></div>
+    </div>
+    <p class="tree-meta">Cobertura real não é só checkbox. Gabarito autoral validado nas questões novas. ${withWhy} tópico(s) com explicação em todas as questões ligadas. Percentual de cobertura integral: ${Math.round(concluded * 100 / rows.length)}%.</p>
+    <article class="card">
+      <h3>Amostra IBDO (sem invenção)</h3>
+      <p>${IBDO_SAMPLE.note}</p>
+      <p>Provas encontradas: ${IBDO_SAMPLE.examsFound}. Lidas na íntegra (OCR): ${IBDO_SAMPLE.examsReadInFull}. Atualizado em ${IBDO_SAMPLE.updated}.</p>
+      <p>${IBDO_SAMPLE.observed}</p>
+      <p class="tree-meta">${IBDO_SAMPLE.confidence}</p>
+      <ul>${IBDO_SAMPLE.sources.map((s) => `<li><a href="${s.url}" target="_blank" rel="noopener">${s.title}</a> · ${s.kind}</li>`).join("")}</ul>
+    </article>
+    <div class="filters" id="cov-filters">
+      <button type="button" class="chip ${covFilterDisc === "all" ? "active" : ""}" data-cd="all">Todas as disciplinas</button>
+      <button type="button" class="chip ${covFilterDisc === "Língua Portuguesa" ? "active" : ""}" data-cd="Língua Portuguesa">Português</button>
+      <button type="button" class="chip ${covFilterDisc === "Legislação" ? "active" : ""}" data-cd="Legislação">Legislação</button>
+      <button type="button" class="chip ${covFilterDisc === "Específicas" ? "active" : ""}" data-cd="Específicas">Específicas</button>
+    </div>
+    <div class="filters" id="cov-pri">
+      <button type="button" class="chip ${covFilterPri === "all" ? "active" : ""}" data-cp="all">Toda prioridade</button>
+      <button type="button" class="chip ${covFilterPri === "alta" ? "active" : ""}" data-cp="alta">Alta</button>
+      <button type="button" class="chip ${covFilterPri === "média" ? "active" : ""}" data-cp="média">Média</button>
+      <button type="button" class="chip ${covFilterPri === "cobertura" ? "active" : ""}" data-cp="cobertura">Cobertura</button>
+    </div>
+    <div class="filters" id="cov-sit">
+      <button type="button" class="chip ${covFilterSit === "all" ? "active" : ""}" data-cs="all">Todas as situações</button>
+      <button type="button" class="chip ${covFilterSit === "nao" ? "active" : ""}" data-cs="nao">Não estudados</button>
+      <button type="button" class="chip ${covFilterSit === "semq" ? "active" : ""}" data-cs="semq">Sem questões</button>
+      <button type="button" class="chip ${covFilterSit === "baixo" ? "active" : ""}" data-cs="baixo">Baixo aproveitamento</button>
+      <button type="button" class="chip ${covFilterSit === "ok" ? "active" : ""}" data-cs="ok">Concluídos</button>
+    </div>
+    ${open && openCov ? `
+      <article class="card good" id="cov-open">
+        <p class="pri">${open.pri} · ${sitLabel(openCov.sit)}</p>
+        <h3>${open.topic}</h3>
+        <p class="tree-meta">${evidLabel(open.evid)} · meta inicial ${open.recQ || 0} questão(ões) · ${openCov.qs.length} no banco${openCov.pct != null ? " · " + openCov.pct + "% (" + openCov.ok + "/" + openCov.answered + ")" : " · sem prática ainda"}</p>
+        ${noteHtml(open.id)}
+        <div class="q-nav">
+          ${openCov.qs.length ? `<button type="button" class="btn primary" data-goq="${open.id}">Questões deste assunto</button>` : ""}
+          ${openCov.qs.length ? `<button type="button" class="btn gold" data-godrill="${open.id}">Treino deste assunto</button>` : ""}
+          <button type="button" class="btn" data-gom="materiais">Materiais / PDFs</button>
+          <button type="button" class="btn" id="cov-close">Fechar detalhe</button>
+        </div>
+      </article>
+    ` : ""}
+    ${list.map((r) => `
+      <div class="tree-item">
+        <span>
+          <span class="pri">${r.e.pri} · ${sitLabel(r.sit)}</span><br>${r.e.topic}
+          <span class="tree-meta">${r.hasNote ? "material" : "sem nota"} · ${r.qs.length} questão(ões)${r.pct != null ? " · " + r.pct + "%" : ""}${r.e.recQ ? " · meta " + r.e.recQ : ""} · ${evidLabel(r.e.evid)}</span>
+          <span class="links">
+            <button type="button" data-covopen="${r.e.id}">Abrir</button>
+            ${r.qs.length ? `<button type="button" data-goq="${r.e.id}">Resolver</button>` : ""}
+            ${r.qs.length ? `<button type="button" data-godrill="${r.e.id}">Treino</button>` : ""}
+          </span>
+        </span>
+      </div>
+    `).join("") || `<article class="card"><h3>Nenhum tópico neste filtro</h3></article>`}
+  `;
+  box.querySelectorAll("[data-cd]").forEach((b) => b.addEventListener("click", () => { covFilterDisc = b.dataset.cd; renderCobertura(); }));
+  box.querySelectorAll("[data-cp]").forEach((b) => b.addEventListener("click", () => { covFilterPri = b.dataset.cp; renderCobertura(); }));
+  box.querySelectorAll("[data-cs]").forEach((b) => b.addEventListener("click", () => { covFilterSit = b.dataset.cs; renderCobertura(); }));
+  box.querySelectorAll("[data-covopen]").forEach((b) => b.addEventListener("click", () => { covOpenId = b.dataset.covopen; renderCobertura(); }));
+  box.querySelectorAll("[data-goq]").forEach((b) => b.addEventListener("click", () => openTopicQuestions(b.dataset.goq)));
+  box.querySelectorAll("[data-godrill]").forEach((b) => b.addEventListener("click", () => openTopicDrill(b.dataset.godrill)));
+  box.querySelectorAll("[data-gom]").forEach((b) => b.addEventListener("click", () => goPanel("materiais")));
+  const cl = document.getElementById("cov-close");
+  if (cl) cl.addEventListener("click", () => { covOpenId = null; renderCobertura(); });
 }
 
 const VIDEOS = [
@@ -829,6 +1052,13 @@ function renderMateriais() {
         ${LEI946_ROTEIRO.map((r) => `<li><b>${r.arts}</b> ${r.tema}</li>`).join("")}
       </ul>
     </article>
+    <article class="card">
+      <h3>Roteiro de leitura · Lei Orgânica de Tanguá</h3>
+      <p>Dispositivos conferidos no PDF oficial. Não use LOM de outro município. Código de Posturas (Lei 657/2007) continua complementar.</p>
+      <ul>
+        ${LOM_ROTEIRO.map((r) => `<li><b>${r.arts}</b> ${r.tema}</li>`).join("")}
+      </ul>
+    </article>
     <div class="grid-3">
       ${VIDEOS.map((v) => `
         <article class="card">
@@ -842,6 +1072,77 @@ function renderMateriais() {
   `;
 }
 
+const LOM_ROTEIRO = [
+  { arts: "Art. 20, I–II", tema: "Competência privativa: legislar sobre interesse local e suplementar a legislação federal e estadual, no que couber." },
+  { arts: "Art. 43", tema: "O Poder Legislativo é exercido pela Câmara de Vereadores. Parágrafo único: legislatura de quatro anos; cada ano, uma sessão legislativa." },
+  { arts: "Art. 69, I–III e §1º", tema: "Emenda à LOM: proposta de 2/3 da Câmara, do Prefeito ou popular (5% do eleitorado). Dois turnos, interstício mínimo de 10 dias, 2/3 em cada turno." },
+  { arts: "Art. 94, I–V", tema: "Prefeito: iniciar o processo legislativo; representar o Município; sancionar, promulgar e publicar leis e expedir regulamentos; vetar no todo ou em parte; nomear e exonerar Secretários." }
+];
+
+const NOTES = {
+  "pt-interp": { conceito: "Compreender o que o texto diz e o que se pode concluir sem extrapolar.", pontos: ["Explícito = está escrito.", "Implícito = o texto autoriza concluir.", "Não use conhecimento de mundo para completar o que o texto não diz.", "Cuidado com EXCETO/NÃO no enunciado."], fonte: "Anexo II · Português. Sem prova IBDO transcrita nesta amostra." },
+  "pt-var": { conceito: "A língua varia conforme região, grupo social, situação e tempo.", pontos: ["Norma culta é a da prova, não a única forma existente.", "Variação não é erro; desvio da norma culta pode ser cobrado como inadequação ao registro formal.", "Não inventar estatística de banca: evidência IBDO insuficiente neste tópico."], fonte: "Anexo II · variações linguísticas." },
+  "pt-func": { conceito: "Funções da linguagem: o que o texto privilegia (referente, emissor, receptor, canal, código, mensagem).", pontos: ["Referencial: informar (edital, notícia).", "Emotiva: emissor.", "Apelativa/conativa: receptor (ordem, propaganda).", "Fática: canal. Metalinguística: código. Poética: forma da mensagem."], fonte: "Anexo II · funções da linguagem." },
+  "pt-gen": { conceito: "Tipo = estrutura (narração, descrição, dissertação, injunção). Gênero = uso social (notícia, edital, ofício).", pontos: ["Dissertativo-argumentativo: tese + argumentos.", "Injuntivo: instruir (receita, edital de 'faça X').", "Não trate gênero e tipo como sinônimos."], fonte: "Anexo II · tipos e gêneros." },
+  "pt-coes": { conceito: "Coesão liga partes do texto; coerência é o sentido global.", pontos: ["Conectivos: oposição (contudo), conclusão (portanto), causa (porque).", "Coerência falha quando o texto se contradiz ou não progride.", "Pontuação também coesiona (aposto, enumeração)."], fonte: "Anexo II · coesão e coerência." },
+  "pt-orto": { conceito: "Grafia, maiúsculas, acentuação e pontuação pelo Acordo vigente.", pontos: ["Oxítonas: a(s), e(s), o(s), em, ens.", "Por que / porque / porquê / por quê.", "Não separe sujeito e verbo com vírgula.", "Maiúscula em nomes próprios e início de período."], fonte: "Anexo II · ortografia do Acordo." },
+  "pt-fono": { conceito: "Letra ≠ fonema. Encontros e dígrafos.", pontos: ["Dígrafo: duas letras, um fonema (ch, nh, lh, rr, ss, qu, gu).", "Encontro consonantal: dois fonemas (pr, cl, gr).", "Hiato: vogais em sílabas distintas (sa-í-da).", "X em táxi vale /ks/ (mais fonemas que letras)."], fonte: "Anexo II · fonologia/fonética. Prioridade de cobertura: evidência IBDO insuficiente." },
+  "pt-morf": { conceito: "Estrutura e classes da palavra.", pontos: ["Radical, prefixo, sufixo, desinência, vogal temática.", "Derivação × composição.", "Classes: substantivo, adjetivo, verbo, advérbio, preposição, conjunção, pronome, numeral, artigo, interjeição."], fonte: "Anexo II · morfologia." },
+  "pt-sint": { conceito: "Relações na oração e entre orações.", pontos: ["Concordância: haver (=existir) e fazer (tempo) são impessoais.", "Regência: aspirar a, visar a, assistir a (ver), obedecer a.", "Crase: a + a diante de feminino determinado; sem crase em 'a pé'.", "Orações coordenadas (independentes) × subordinadas (dependem)."], fonte: "Anexo II · sintaxe. Briefing da prova de Paraibuna 2019 cita regência." },
+  "pt-sem": { conceito: "Significado das palavras no contexto.", pontos: ["Denotação (literal) × conotação (figurado).", "Sinônimos / antônimos.", "Parônimos: comprimento / cumprimento.", "Homonímia: mesma forma, sentidos distintos.", "Polissemia e ambiguidade (anexo mal colocado)."], fonte: "Anexo II · semântica." },
+  "pt-fig": { conceito: "Desvio expressivo em relação ao sentido literal.", pontos: ["Metáfora: comparação implícita.", "Metonímia: parte/todo, instituição/pessoas ('a Câmara aprovou').", "Hipérbole: exagero.", "Eufemismo: suavização. Não aprofundar catálogo acadêmico."], fonte: "Anexo II · figuras. Prioridade de cobertura." },
+  "leg-946-inv": { conceito: "Investidura ocorre com a posse e se completa com o exercício.", pontos: ["Concurso: até 2 anos da homologação, prorrogável 1 vez (Art. 14, parágrafo único).", "Posse: 30+30 dias da publicação da nomeação (Art. 35).", "Exercício: 15+15 da posse (Art. 36). Sem exercício: exoneração de ofício (Art. 50, II).", "Só há posse na nomeação (Art. 35, §3º)."], fonte: "Lei 946/2014, PDF Prefeitura de Tanguá, conferido 02/11/2026." },
+  "leg-946-prov": { conceito: "Provimento preenche o cargo; vacância esvazia.", pontos: ["Art. 20: nomeação, recondução, reintegração, reversão, aproveitamento, promoção, readaptação.", "Exoneração é vacância (Art. 49), não provimento e não é penalidade.", "Recondução a pedido: 120 dias (Art. 26, III).", "Readaptação provisória: até 2 anos (Art. 30)."], fonte: "Lei 946/2014 Arts. 20–32 e 49." },
+  "leg-946-est": { conceito: "Estágio de 3 anos a contar do exercício; estabilidade se a avaliação for satisfatória.", pontos: ["Art. 39: 3 anos do exercício, avaliação semestral.", "Insuficiência: exoneração (Art. 45), não demissão.", "Perda do cargo estável: sentença transitada, PAD ou avaliação periódica, com defesa (Art. 48).", "No estágio, só algumas licenças (Art. 127, §5º)."], fonte: "Lei 946/2014 Arts. 39–48 e 127, §5º." },
+  "leg-946-dir": { conceito: "Direitos, vantagens, licenças e ausências abonadas do estatuto local.", pontos: ["Art. 127: 11 modalidades de licença (capacitação até prêmio).", "Estágio: só gestante, paternidade e tratamento de saúde (§5º).", "Casamento e falecimento de cônjuge/familiares: 8 dias, comprovação em 48h (Art. 176, V e VI).", "Não copiar prazos de outro município."], fonte: "Lei 946/2014 Arts. 127 e 176." },
+  "leg-946-disc": { conceito: "Deveres, proibições, penas e ritos (sindicância e PAD).", pontos: ["Deveres Art. 204 (zelo, sigilo, urbanidade, levar irregularidade à autoridade).", "Proibido receber presente em razão do cargo (Art. 205, XII).", "Penas Art. 217: advertência, multa, suspensão, demissão, cassação, destituição. Exoneração não é pena.", "Sindicância 30+30 (Art. 231); PAD 60+60, comissão de 3 efetivos (Arts. 239 e 242).", "Abandono >30 dias; inassiduidade 60/12 meses (Art. 232). Prescrição 5 anos / 2 anos / 180 dias (Art. 271)."], fonte: "Lei 946/2014 Arts. 204–271." },
+  "leg-946-pet": { conceito: "Direito de petição e recurso no estatuto.", pontos: ["Recurso: 15 dias da ciência (Art. 198); se provido, efeitos retroagem.", "Prescrição do direito de requerer: 5 anos (demissão/cassação/créditos) ou 2 anos (demais) — Art. 199.", "Não confundir com prescrição da ação disciplinar (Art. 271)."], fonte: "Lei 946/2014 Arts. 198–199." },
+  "leg-lom": { conceito: "Competência municipal na LOM de Tanguá, não de outro município.", pontos: ["Art. 20, I: legislar sobre interesse local.", "Art. 20, II: suplementar legislação federal e estadual, no que couber.", "Não legisla direito penal, não emite moeda, não declara guerra."], fonte: "LOM Tanguá, Art. 20, PDF oficial." },
+  "leg-lom-cam": { conceito: "Câmara exerce o Legislativo local; LOM tem rito rígido de emenda.", pontos: ["Art. 43: Poder Legislativo = Câmara. Legislatura de 4 anos.", "Art. 69: proposta de 2/3 dos vereadores, do Prefeito ou popular (5%).", "§1º: dois turnos, 10 dias de interstício, 2/3 em cada turno."], fonte: "LOM Tanguá Arts. 43 e 69." },
+  "leg-lom-pref": { conceito: "O Prefeito chefia o Executivo e pratica os atos de governo e de administração previstos na LOM.", pontos: ["Art. 94, I: iniciar o processo legislativo nos casos da LOM.", "III: sancionar, promulgar, publicar e regulamentar.", "IV: vetar no todo ou em parte.", "V: nomear e exonerar Secretários.", "Não confunda com competência da Câmara (Art. 43)."], fonte: "LOM Tanguá Art. 94." },
+  "esp-cf-pf": { conceito: "Fundamentos, poderes e objetivos da República.", pontos: ["Art. 1º: soberania, cidadania, DPH, valores sociais do trabalho e da livre iniciativa, pluralismo político. Separação dos Poderes é Art. 2º.", "Art. 2º: Legislativo, Executivo e Judiciário.", "Art. 3º: objetivos (construir sociedade livre, justa e solidária etc.). Não misturar fundamentos com objetivos."], fonte: "CF Arts. 1º–4º." },
+  "esp-cf-5": { conceito: "Direitos e garantias; remédios constitucionais em noções de nível médio.", pontos: ["HC: liberdade de locomoção (LXVIII).", "Habeas data: dados em registro público (LXXII).", "MS: direito líquido e certo residual (LXIX).", "Não transformar em prova de Procurador."], fonte: "CF Art. 5º." },
+  "esp-cf-mun": { conceito: "Município é ente federativo autônomo, com lei orgânica própria.", pontos: ["Art. 18: União, Estados, DF e Municípios.", "Art. 29: LOM em dois turnos, interstício de 10 dias, 2/3 da Câmara.", "Competências municipais: Art. 30 (interesse local). Pararelo com LOM Art. 20."], fonte: "CF Arts. 18–31." },
+  "esp-cf-adm": { conceito: "Art. 37 LIMPE + regras de servidores (concurso, acumulação, estabilidade).", pontos: ["LIMPE: legalidade, impessoalidade, moralidade, publicidade, eficiência.", "§1º: publicidade educativa, sem promoção pessoal.", "Art. 37, II: concurso para efetivo.", "Art. 41: estabilidade após 3 anos de exercício, nomeados por concurso."], fonte: "CF Arts. 37–41." },
+  "esp-cf-leg": { conceito: "Noções: Congresso fiscaliza com auxílio do TCU. Não é prova de TCE.", pontos: ["Art. 70–71: fiscalização pelo Congresso, auxílio do TCU.", "No Município, paralelo: Câmara + tribunal de contas competente.", "PPA/LDO/LOA detalhados e LRF são programa do Agente de Controle Interno neste edital, não do Fiscal."], fonte: "CF Arts. 44–75, noções. Prioridade de cobertura." },
+  "esp-cf-fin": { conceito: "Noções de tributação, orçamento e finanças. Sem profundidade de LRF.", pontos: ["Art. 165: PPA, LDO e LOA, iniciativa do Executivo.", "Não estude Lei 4.320 nem LRF como se fosse Agente de Controle Interno.", "Ausência de questões IBDO transcritas ≠ 'não cai'."], fonte: "CF Arts. 145–169, noções." },
+  "esp-adm-prin": { conceito: "Princípios (LIMPE) e estrutura da Administração.", pontos: ["Direta: órgãos da pessoa política (Prefeitura, secretarias).", "Indireta: autarquia, fundação pública, empresa pública, sociedade de economia mista.", "Câmara é órgão, não entidade da indireta."], fonte: "Anexo II · princípios e administração direta/indireta." },
+  "esp-adm-atos": { conceito: "Ato administrativo: elementos, atributos, validade e extinção.", pontos: ["Elementos (COFIFOMO): competência, finalidade, forma, motivo, objeto.", "Atributos: presunção de legitimidade, imperatividade, autoexecutoriedade, tipicidade.", "Anulação: ilegalidade, ex tunc. Revogação: conveniência, ex nunc (só a Administração revoga)."], fonte: "Anexo II · atos. Briefing Paraibuna 2019 cita atos." },
+  "esp-adm-atos-class": { conceito: "Cada classificação é eixo próprio; uma questão de vinculado não cobre as demais.", pontos: ["Simples: um órgão. Complexo: vontades de órgãos diversos num só ato. Composto: principal + acessório.", "Unilateral: uma vontade (a regra do ato administrativo). Bilateral/multilateral: acordo.", "Geral: destinatários indeterminados. Individual: pessoa certa.", "Vinculado: lei não deixa escolha. Discricionário: mérito (conveniência/oportunidade) nos limites da lei."], fonte: "Anexo II lista expressamente essas classificações." },
+  "esp-adm-proc": { conceito: "O ato se forma por um procedimento: sequência de atos preparatórios até a decisão.", pontos: ["Procedimento ≠ processo judicial.", "Fases típicas em noções: instauração, instrução, decisão.", "Auto de infração de posturas é ato, precedido de verificação e, quando a lei exigir, de defesa.", "Evidência IBDO insuficiente; prepare o básico."], fonte: "Anexo II · procedimento administrativo. Prioridade de cobertura." },
+  "esp-adm-ag": { conceito: "Quem exerce função pública. Servidor efetivo ≠ cargo em comissão ≠ empregado celetista.", pontos: ["Agente público é gênero.", "Servidor estatutário (Lei 946) × empregado público (CLT em empresa pública/economia mista).", "Funcionário, no uso clássico, liga-se ao regime estatutário. A prova de nível médio cobra a distinção, não monografia."], fonte: "Anexo II · agentes públicos." },
+  "esp-adm-imp": { conceito: "Lei 8.429 com 14.230/2021: dolo, atos, penas. Sem jurisprudência de STF em profundidade.", pontos: ["Improbidade exige dolo na redação atual (14.230/21).", "Não confundir com crime nem com pena disciplinar da Lei 946.", "Sanções típicas: perda da função, suspensão de direitos políticos, multa, proibição de contratar."], fonte: "Lei 8.429/92, com Lei 14.230/21. Briefing Paraibuna cita improbidade." },
+  "esp-adm-bens": { conceito: "Uso: comum, especial, dominical. Atributos clássicos: inalienabilidade, imprescritibilidade, impenhorabilidade (os 'in').", pontos: ["Comum: rua, praça.", "Especial: repartição em uso.", "Dominical: patrimônio disponível (terreno vago).", "Apreensão de mercadoria em logradouro não transfere o bem ao fiscal."], fonte: "CC Arts. 98–103 / doutrina de nível médio." },
+  "esp-adm-prov-vac": { conceito: "No Anexo II de específicas, cruzar doutrina/CF com Lei 946 Arts. 20 e 49.", pontos: ["Provimento originário típico: nomeação.", "Vacância: exoneração, demissão, aposentadoria, falecimento, posse em cargo inacumulável, readaptação.", "Não use estatuto de outro município."], fonte: "Anexo II + Lei 946 Arts. 20 e 49." },
+  "esp-etica": { conceito: "Primazia do interesse público, sigilo, urbanidade, recusa de vantagem.", pontos: ["Alinha-se aos deveres do Art. 204 e às proibições do Art. 205 da Lei 946.", "Presente de fiscalizado para facilitar banca ofende ética e o Art. 205, XII.", "Não aprofunde código de ética federal que o edital não cita."], fonte: "Anexo II · ética profissional." },
+  "esp-info-hw": { conceito: "Hardware: parte física. Entrada, saída, processamento, armazenamento.", pontos: ["RAM: volátil. HD/SSD: permanente.", "Scanner: entrada. Impressora: saída. Multifuncional: os dois.", "CPU/processador: processamento. Placa-mãe: integração.", "Edital não fixa marca nem geração de processador."], fonte: "Anexo II · hardware, impressoras, scanners, multifuncionais." },
+  "esp-info-so": { conceito: "Sistemas Microsoft, Office e navegadores citados no edital (IE e Chrome).", pontos: ["Windows: pastas, lixeira, painel de controle/configurações, atalhos (Ctrl+C/V, Alt+Tab).", "Office: Word (texto), Excel (planilha/célula), PowerPoint (slides). Sem VBA nem Power Query.", "Internet Explorer: navegador legado da Microsoft; Edge o sucedeu, mas o edital cita IE — saiba o nome e a função (acessar a web).", "Chrome: navegador Google; abas, favoritos, endereço. Não substitua IE por Edge no estudo sem registrar a diferença."], fonte: "Anexo II · Windows, Office, Internet Explorer, Chrome." },
+  "esp-info-seg": { conceito: "Proteger dados: confidencialidade, integridade, disponibilidade.", pontos: ["Phishing: engenharia social (página/e-mail falso).", "Ransomware: criptografa e pede resgate.", "Backup: cópia de segurança (não é antivírus).", "Senha forte e não reutilizar. Sem redes avançadas nem pentest."], fonte: "Anexo II · segurança da informação." },
+  "esp-anexo1": { conceito: "Atribuição do cargo no Anexo I. Não é conteúdo de Tributos nem de Meio Ambiente.", pontos: ["Licença comercial, ambulante, banca, feira, publicidade, horário/farmácia, inflamáveis, apreensão, evento/circo, denúncia/relatório.", "ISS = Tributos. Dano ambiental típico = Meio Ambiente.", "Circo: documento de engenheiro habilitado.", "Apreensão: depósito público, não a casa do fiscal."], fonte: "Edital 01/2026, Anexo I. Evidência direta de cargo equivalente (Paraibuna 2019), sem transcrição OCR completa." },
+  "comp-657": { conceito: "Código de Posturas de Tanguá. Complementar: não está no Anexo II.", pontos: ["Use só depois de Lei 946, LOM, atos, CF 1º–5º/29–31/37–41 e informática.", "Não entre no cronograma obrigatório."], fonte: "Lei 657/2007. Fora do Anexo II." }
+};
+
+const IBDO_SAMPLE = {
+  updated: "03/11/2026",
+  examsFound: 1,
+  examsReadInFull: 0,
+  note: "Uma prova de Fiscal de Posturas da IBDO foi localizada (Paraibuna/SP 2019). O PDF é escaneado; não há extração OCR completa nesta entrega. ibdo.org.br não respondeu (erro de transporte). Não há percentual inventado.",
+  sources: [
+    { title: "Certame Tanguá 01/2026 (oficial)", url: "https://concursos.ibdoprojetos.org.br/informacoes/107", kind: "edital vigente" },
+    { title: "Edital 01/2026 PDF", url: "https://anexos-r2.selecao.net.br/uploads/331/concursos/107/anexos/d6deaf2c-6d35-4b0b-a164-1c695804e199.pdf", kind: "edital vigente" },
+    { title: "Prova Fiscal de Posturas · Paraibuna/SP 2019", url: "https://www.eticaconcursos.com.br/provas/arquivos/prova/instituto-ibdo-projetos-2019-prefeitura-de-paraibuna-sp-fiscal-de-posturas-prova.pdf", kind: "evidência direta (escaneada)" },
+    { title: "Gabarito Paraibuna/SP 2019", url: "https://www.eticaconcursos.com.br/provas/arquivos/gabarito/instituto-ibdo-projetos-2019-prefeitura-de-paraibuna-sp-fiscal-de-posturas-gabarito.pdf", kind: "gabarito daquela prova, não de Tanguá" }
+  ],
+  observed: "Briefing já existente no site (não OCR): interpretação, regência, ortografia, formação de palavras, legislação municipal, princípios, atos, improbidade, Poder Legislativo, informática. Formatos CORRETO/INCORRETO/EXCETO/NÃO e I–IV. Aquela prova tinha 5 alternativas; Tanguá tem 4 (A–D).",
+  confidence: "Baixa para distribuição percentual. Média para o estilo de enunciado (EXCETO/NÃO) descrito no briefing. Legislação de Paraibuna não substitui Lei 946 nem a LOM de Tanguá."
+};
+
+function noteHtml(id) {
+  const n = NOTES[id];
+  if (!n) return "<p class='tree-meta'>Sem nota objetiva ainda. Use os PDFs oficiais em Materiais.</p>";
+  return `<p><b>Conceito.</b> ${n.conceito}</p><ul>${(n.pontos || []).map((p) => `<li>${p}</li>`).join("")}</ul><p class="tree-meta">Fonte: ${n.fonte}</p>`;
+}
+
 try { renderMateriais(); } catch (_) {}
 
 const BANK = [
@@ -851,12 +1152,12 @@ const BANK = [
   { id: "q04", disc: "Legislação", topic: "Estágio", art: "Lei 946, Art. 39", stem: "O estágio probatório, na Lei 946/2014, tem duração de:", choices: ["Dois anos a contar da posse.", "Três anos a contar da data em que o servidor entrar em exercício.", "Três anos a contar da nomeação.", "Um ano, renovável."], answer: 1, why: "Art. 39: três anos a contar da data em que entrar em exercício. Estabilidade no Art. 47, se a avaliação final for satisfatória." },
   { id: "q05", disc: "Legislação", topic: "Recondução", art: "Lei 946, Art. 26, III", stem: "A recondução a pedido, no quadro de Tanguá, deverá ocorrer no prazo de:", choices: ["30 dias da posse.", "60 dias da exoneração.", "90 dias do exercício.", "120 dias contados do ato de nomeação em outro cargo do quadro de pessoal do Município."], answer: 3, why: "Art. 26, III, e Art. 49, parágrafo único: 120 dias da nomeação no novo cargo." },
   { id: "q06", disc: "Legislação", topic: "PAD", art: "Lei 946, Art. 231", stem: "O prazo para conclusão da sindicância, na Lei 946/2014, não excederá:", choices: ["15 dias, improrrogável.", "30 dias, podendo ser prorrogado por igual período.", "60 dias, sem prorrogação.", "90 dias, só com autorização judicial."], answer: 1, why: "Art. 231, §1º: 30 dias, prorrogável por igual período. Pode arquivar, aplicar advertência ou suspensão de até 30 dias, ou instaurar PAD." },
-  { id: "q07", disc: "Específicas", topic: "Atos", art: "Doutrina · Anexo II", stem: "São atributos clássicos do ato administrativo:", choices: ["Competência, finalidade, forma, motivo e objeto.", "Presunção de legitimidade, imperatividade, autoexecutoriedade e tipicidade.", "Anulação, revogação, convalidação e caducidade.", "Vinculação, discricionariedade, mérito e oportunidade."], answer: 1, why: "Atributos: presunção de legitimidade, imperatividade, autoexecutoriedade e tipicidade. Competência, finalidade, forma, motivo e objeto são elementos (COFIFOMO)." },
-  { id: "q08", disc: "Específicas", topic: "Atos", art: "Doutrina · Anexo II", stem: "A autoexecutoriedade do ato administrativo significa, em regra, que:", choices: ["O ato só vale depois de homologação judicial.", "A Administração pode executar o ato por seus próprios meios, sem prévia autorização do Judiciário, nos casos previstos.", "O particular pode descumprir o ato até haver sentença.", "Todo ato vinculado depende de lei complementar."], answer: 1, why: "Autoexecutoriedade: a Administração executa o ato pelos próprios meios, sem precisar de título judicial, quando a lei autoriza (ex.: apreensão, interdição)." },
+  { id: "q07", disc: "Específicas", topic: "Atos", edital: ["esp-adm-atos"], art: "Doutrina · Anexo II", stem: "São atributos clássicos do ato administrativo:", choices: ["Competência, finalidade, forma, motivo e objeto.", "Presunção de legitimidade, imperatividade, autoexecutoriedade e tipicidade.", "Anulação, revogação, convalidação e caducidade.", "Vinculação, discricionariedade, mérito e oportunidade."], answer: 1, why: "Atributos: presunção de legitimidade, imperatividade, autoexecutoriedade e tipicidade. Competência, finalidade, forma, motivo e objeto são elementos (COFIFOMO)." },
+  { id: "q08", disc: "Específicas", topic: "Atos", edital: ["esp-adm-atos"], art: "Doutrina · Anexo II", stem: "A autoexecutoriedade do ato administrativo significa, em regra, que:", choices: ["O ato só vale depois de homologação judicial.", "A Administração pode executar o ato por seus próprios meios, sem prévia autorização do Judiciário, nos casos previstos.", "O particular pode descumprir o ato até haver sentença.", "Todo ato vinculado depende de lei complementar."], answer: 1, why: "Autoexecutoriedade: a Administração executa o ato pelos próprios meios, sem precisar de título judicial, quando a lei autoriza (ex.: apreensão, interdição)." },
   { id: "q09", disc: "Específicas", topic: "CF 37", art: "CF Art. 37, caput", stem: "Os princípios expressos no caput do Art. 37 da Constituição Federal são:", choices: ["Legalidade, impessoalidade, moralidade, publicidade e eficiência.", "Legalidade, isonomia, moralidade, proporcionalidade e eficiência.", "Publicidade, razoabilidade, eficiência, economicidade e legalidade.", "Legalidade, finalidade, motivação, razoabilidade e proporcionalidade."], answer: 0, why: "LIMPE: legalidade, impessoalidade, moralidade, publicidade e eficiência. Os demais (finalidade, motivação, razoabilidade) são implícitos ou da Lei 9.784." },
   { id: "q10", disc: "Específicas", topic: "Bens públicos", art: "CC Arts. 98–103 / doutrina", stem: "Quanto à destinação, os bens públicos classificam-se em:", choices: ["Móveis, imóveis e semoventes.", "Federais, estaduais e municipais.", "De uso comum do povo, de uso especial e dominicais.", "Disponíveis, indisponíveis e alienáveis."], answer: 2, why: "Classificação tradicional do Anexo II: uso comum (ruas, praças), uso especial (repartições) e dominicais (patrimônio disponível). Os três 'in': inalienáveis, imprescritíveis, impenhoráveis, com nuances nos dominicais." },
   { id: "q11", disc: "Específicas", topic: "Improbidade", art: "Lei 8.429/92, com 14.230/21", stem: "Após a Lei 14.230/2021, a caracterização do ato de improbidade administrativa exige, em regra:", choices: ["Culpa grave, ainda que sem dolo.", "Dolo.", "Mero erro de gestão.", "Somente prejuízo ao erário, independentemente de dolo."], answer: 1, why: "A Lei 14.230/2021 passou a exigir dolo. Culpa isolada não basta. Não confundir erro grosseiro de gestão com ato ímprobo." },
-  { id: "q12", disc: "Específicas", topic: "Informática", art: "Anexo II", stem: "No contexto de segurança da informação, phishing é:", choices: ["Programa que criptografa arquivos e pede resgate.", "Técnica de engenharia social para obter dados por mensagem ou site falso.", "Cópia de segurança armazenada em outro disco.", "Atualização automática do sistema operacional."], answer: 1, why: "Phishing: golpe de engenharia social (e-mail, SMS, página falsa) para capturar senha ou dados. Ransomware é o sequestro por criptografia. Backup é a cópia de segurança." },
+  { id: "q12", disc: "Específicas", topic: "Informática", edital: ["esp-info-seg"], art: "Anexo II", stem: "No contexto de segurança da informação, phishing é:", choices: ["Programa que criptografa arquivos e pede resgate.", "Técnica de engenharia social para obter dados por mensagem ou site falso.", "Cópia de segurança armazenada em outro disco.", "Atualização automática do sistema operacional."], answer: 1, why: "Phishing: golpe de engenharia social (e-mail, SMS, página falsa) para capturar senha ou dados. Ransomware é o sequestro por criptografia. Backup é a cópia de segurança." },
   { id: "q13", disc: "Português", topic: "Crase", art: "Gramática", stem: "Assinale a frase em que o acento grave (crase) está empregado de acordo com a norma culta:", choices: ["Fui à pé até a prefeitura.", "O relatório foi enviado à ela ontem.", "A fiscalização referiu-se à irregularidade encontrada.", "O servidor chegou à uma hora atrasado, no sentido de aproximadamente."], answer: 2, why: "Crase: a (preposição) + a (artigo) diante de palavra feminina determinada. 'À pé' é erro (pé é masculino). 'À ela' é erro (pronome reto não admite artigo). 'À uma' no sentido aproximado não leva crase." },
   { id: "q14", disc: "Português", topic: "Interpretação", art: "Anexo II", stem: "Em prova de concurso, interpretação de texto autoriza o candidato a:", choices: ["Usar conhecimento de mundo para completar o que o texto não diz.", "Marcar inferência somente quando o texto permitir concluir aquilo.", "Ignorar o enunciado se o tema for conhecido.", "Escolher a alternativa mais longa, por ser mais completa."], answer: 1, why: "IBDO cobra compreensão (o que está escrito) e inferência (o que se conclui sem extrapolar). Conhecimento externo e 'achismo' eliminam." },
   { id: "q15", disc: "Específicas", topic: "Anexo I", art: "Edital Anexo I", stem: "NÃO se inclui entre as atribuições típicas do Fiscal de Posturas no Anexo I do Edital 01/2026:", choices: ["Verificar licença de ambulantes.", "Inspecionar feiras livres quanto a localização, horário e organização.", "Lançar e constituir crédito tributário de ISS.", "Apreender mercadorias expostas em logradouro público, por infração."], answer: 2, why: "ISS e crédito tributário são de Fiscal de Tributos. Posturas: licenciamento de atividades, ambulantes, bancas, feiras, publicidade, horários, inflamáveis, apreensão, eventos, relatórios." }
@@ -893,6 +1194,11 @@ function bankList() {
   const rev = loadReview();
   const q = (qSearch || "").trim().toLowerCase();
   return BANK.filter((item) => {
+    if (qEdital) {
+      const e = EDITAL.find((x) => x.id === qEdital);
+      if (!e) return false;
+      if (qForTopic(e).indexOf(item) < 0) return false;
+    }
     if (qFilter !== "all" && item.disc !== qFilter) return false;
     if (qMode === "open" && ans[item.id]) return false;
     if (qMode === "ok" && !(ans[item.id] && ans[item.id].ok === true)) return false;
@@ -1029,15 +1335,22 @@ function paintQOverview() {
 function openDrillSetup() {
   const box = document.getElementById("q-box");
   if (!box) return;
+  if (pendingDrill) {
+    const job = pendingDrill;
+    pendingDrill = null;
+    startDrill(job.n || 10, job.src);
+    return;
+  }
   drill = null;
   qPick = null;
   wantDrill = true;
   uiPraticar = "treino";
   syncNav("questoes");
+  const official = EDITAL.filter((e) => (e.cat || "oficial") !== "complementar");
   box.innerHTML = `
     <article class="card">
       <h3>Treino rápido</h3>
-      <p>Sessão curta, uma questão por vez. Prioriza abertas e erradas. Sem repetir item na mesma sessão. Gabarito só depois de confirmar.</p>
+      <p>Sessão curta, uma questão por vez. Prioriza abertas e erradas. Sem repetir item na mesma sessão. Gabarito só depois de confirmar. Respostas desta sessão não gravam o banco.</p>
       <p class="tree-meta">Quantas questões</p>
       <div class="filters" id="drill-n">
         ${[10, 15, 20].map((n, i) => `<button type="button" class="chip ${i === 0 ? "active" : ""}" data-dn="${n}">${n}</button>`).join("")}
@@ -1048,10 +1361,17 @@ function openDrillSetup() {
         <button type="button" class="chip" data-ds="Português">Apenas Português</button>
         <button type="button" class="chip" data-ds="Legislação">Apenas Legislação</button>
         <button type="button" class="chip" data-ds="Específicas">Apenas Específicas</button>
+        <button type="button" class="chip" data-ds="alta">Prioridade alta</button>
+        <button type="button" class="chip" data-ds="weak">Assunto com menor acerto</button>
         <button type="button" class="chip" data-ds="wrong">Questões erradas</button>
         <button type="button" class="chip" data-ds="open">Ainda não respondidas</button>
         <button type="button" class="chip" data-ds="review">Marcadas para revisão</button>
       </div>
+      <p class="tree-meta">Assunto da matriz do edital</p>
+      <label class="search-field"><select id="drill-edital">
+        <option value="">Nenhum (usar o recorte acima)</option>
+        ${official.map((e) => `<option value="edital:${e.id}">${e.disc} · ${e.topic}</option>`).join("")}
+      </select></label>
       <div class="q-nav">
         <button type="button" class="btn primary" id="drill-go">Iniciar treino</button>
         <button type="button" class="btn" id="drill-cancel">Voltar ao banco</button>
@@ -1068,8 +1388,14 @@ function openDrillSetup() {
     box.querySelectorAll("[data-ds]").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     src = b.dataset.ds;
+    const sel = document.getElementById("drill-edital");
+    if (sel) sel.value = "";
   }));
-  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; qPick = null; wantDrill = false; uiPraticar = "questoes"; renderQuestoes(); syncNav("questoes"); });
+  const edSel = document.getElementById("drill-edital");
+  if (edSel) edSel.addEventListener("change", () => {
+    if (edSel.value) src = edSel.value;
+  });
+  document.getElementById("drill-cancel").addEventListener("click", () => { drill = null; qPick = null; wantDrill = false; uiPraticar = "questoes"; qEdital = null; renderQuestoes(); syncNav("questoes"); });
   document.getElementById("drill-go").addEventListener("click", () => startDrill(n, src));
 }
 
@@ -1077,10 +1403,26 @@ function startDrill(n, src) {
   const ans = loadAnswers();
   const rev = loadReview();
   let pool = BANK.slice();
+  if (src && String(src).indexOf("edital:") === 0) {
+    const eid = String(src).slice(7);
+    const item = EDITAL.find((e) => e.id === eid);
+    pool = item ? qForTopic(item).slice() : [];
+  }
   if (src === "Português" || src === "Legislação" || src === "Específicas") pool = pool.filter((q) => q.disc === src);
   if (src === "wrong") pool = pool.filter((q) => ans[q.id] && ans[q.id].ok === false);
   if (src === "open") pool = pool.filter((q) => !ans[q.id]);
   if (src === "review") pool = pool.filter((q) => rev[q.id]);
+  if (src === "alta") {
+    const high = EDITAL.filter((e) => e.pri === "alta" && (e.cat || "oficial") !== "complementar");
+    const ids = {};
+    high.forEach((e) => qForTopic(e).forEach((q) => { ids[q.id] = true; }));
+    pool = pool.filter((q) => ids[q.id]);
+  }
+  if (src === "weak") {
+    const weak = topicStats(2);
+    const top = weak[0] && weak[0].topic;
+    if (top) pool = pool.filter((q) => q.topic === top);
+  }
   const open = [], wrong = [], rest = [];
   pool.forEach((q) => {
     if (!ans[q.id]) open.push(q);
@@ -1106,8 +1448,13 @@ function startDrill(n, src) {
   });
   if (!ids.length) {
     setQStatus("Não há questões nesse recorte para montar o treino.");
+    wantDrill = true;
+    drill = null;
+    openDrillSetup();
     return;
   }
+  wantDrill = true;
+  uiPraticar = "treino";
   drill = { ids, i: 0, picks: {}, src: src, n: n };
   qIndex = 0;
   qPick = null;
@@ -1228,8 +1575,10 @@ function renderQuestoes() {
   if (qTopic !== "all" && topics.indexOf(qTopic) < 0) qTopic = "all";
   const esc = (s) => String(s || "").replace(/"/g, "&quot;");
   const advOpen = !!(qTopic !== "all" || qLevel !== "all" || qMode === "review");
+  const edItem = qEdital ? EDITAL.find((e) => e.id === qEdital) : null;
   filters.innerHTML = `
     <label class="search-field">Pesquisar<input type="search" id="q-search" value="${esc(qSearch)}" placeholder="enunciado, assunto ou artigo" /></label>
+    ${edItem ? `<div class="filter-group"><span class="filter-label">Matriz do edital</span><button type="button" class="chip active" id="q-edital-clear">${edItem.topic} · limpar</button></div>` : ""}
     <div class="filter-primary">
       <div class="filter-group"><span class="filter-label">Disciplina</span>${discs.map((d) => `<button type="button" class="chip ${qFilter === d ? "active" : ""}" data-qd="${d}">${d === "all" ? "Todas" : d}</button>`).join("")}</div>
       <div class="filter-group"><span class="filter-label">Situação</span>
@@ -1246,6 +1595,8 @@ function renderQuestoes() {
       <label class="search-field" style="margin-top:10px">Assunto <select id="q-topic">${topics.map((t) => `<option value="${t}" ${qTopic === t ? "selected" : ""}>${t === "all" ? "Todos os assuntos" : t}</option>`).join("")}</select></label>
     </details>
   `;
+  const edClear = document.getElementById("q-edital-clear");
+  if (edClear) edClear.addEventListener("click", () => { qEdital = null; qIndex = 0; qPick = null; renderQuestoes(); });
   filters.querySelectorAll("button[data-qd]").forEach((btn) => {
     btn.addEventListener("click", () => { qFilter = btn.dataset.qd; qIndex = 0; qPick = null; qTopic = "all"; renderQuestoes(); });
   });
@@ -1388,9 +1739,9 @@ const MORE_BANK = [
   { id: "q24", disc: "Específicas", topic: "CF 1º", art: "CF Art. 1º", stem: "São fundamentos da República Federativa do Brasil, previstos no Art. 1º da CF, EXCETO:", choices: ["Soberania.", "Dignidade da pessoa humana.", "Pluralismo político.", "Separação dos Poderes."], answer: 3, why: "Art. 1º: soberania, cidadania, dignidade da pessoa humana, valores sociais do trabalho e da livre iniciativa, pluralismo político. Separação dos Poderes está no Art. 2º." },
   { id: "q25", disc: "Específicas", topic: "Municípios", art: "CF Art. 29", stem: "O Município reger-se-á por lei orgânica, votada em dois turnos, com interstício mínimo de dez dias, e aprovada por:", choices: ["Maioria simples da Câmara.", "Dois terços dos membros da Câmara Municipal.", "Maioria absoluta dos eleitores.", "Decreto do Prefeito, referendado pela Câmara."], answer: 1, why: "CF Art. 29, caput: lei orgânica aprovada por dois terços dos membros da Câmara, em dois turnos, com interstício mínimo de dez dias." },
   { id: "q26", disc: "Específicas", topic: "Servidores CF", art: "CF Art. 41", stem: "São estáveis após três anos de efetivo exercício os servidores nomeados para cargo de provimento efetivo em virtude de:", choices: ["Contrato temporário.", "Cargo em comissão.", "Concurso público.", "Designação para função de confiança."], answer: 2, why: "CF Art. 41: estabilidade após 3 anos de efetivo exercício, para nomeados em virtude de concurso público. Alinha-se ao Art. 47 da Lei 946." },
-  { id: "q27", disc: "Específicas", topic: "Atos", art: "Doutrina · Anexo II", stem: "O ato vinculado diferencia-se do discricionário porque, no vinculado:", choices: ["Há liberdade de escolha quanto ao motivo e ao objeto.", "A lei prevê um único comportamento possível, sem margem de escolha.", "Só o Judiciário pode praticá-lo.", "Ele jamais pode ser anulado."], answer: 1, why: "Ato vinculado: a lei define todos os elementos. Discricionário: margem de escolha no mérito (conveniência e oportunidade), nos limites da lei." },
-  { id: "q28", disc: "Específicas", topic: "Atos", art: "Doutrina · Anexo II", stem: "A anulação do ato administrativo, em oposição à revogação:", choices: ["Retira ato conveniente, com efeitos ex nunc.", "Retira ato ilegal, em regra com efeitos ex tunc.", "Só pode ser feita pelo Judiciário.", "Depende sempre de processo judicial."], answer: 1, why: "Anulação: ilegalidade, efeitos ex tunc. Revogação: conveniência/oportunidade, efeitos ex nunc. Administração e Judiciário podem anular; só a Administração revoga." },
-  { id: "q29", disc: "Específicas", topic: "Informática", art: "Anexo II", stem: "Memória RAM e disco rígido distinguem-se, em regra, porque a RAM:", choices: ["É memória de armazenamento permanente, como o HD.", "É memória volátil de acesso rápido, esvaziada ao desligar o computador.", "Substitui a placa-mãe.", "É um dispositivo apenas de entrada."], answer: 1, why: "RAM: volátil, trabalho rápido. HD/SSD: armazenamento permanente. Confundir os dois é pegadinha clássica de informática em nível médio." },
+  { id: "q27", disc: "Específicas", topic: "Atos", edital: ["esp-adm-atos-class"], art: "Doutrina · Anexo II", stem: "O ato vinculado diferencia-se do discricionário porque, no vinculado:", choices: ["Há liberdade de escolha quanto ao motivo e ao objeto.", "A lei prevê um único comportamento possível, sem margem de escolha.", "Só o Judiciário pode praticá-lo.", "Ele jamais pode ser anulado."], answer: 1, why: "Ato vinculado: a lei define todos os elementos. Discricionário: margem de escolha no mérito (conveniência e oportunidade), nos limites da lei." },
+  { id: "q28", disc: "Específicas", topic: "Atos", edital: ["esp-adm-atos"], art: "Doutrina · Anexo II", stem: "A anulação do ato administrativo, em oposição à revogação:", choices: ["Retira ato conveniente, com efeitos ex nunc.", "Retira ato ilegal, em regra com efeitos ex tunc.", "Só pode ser feita pelo Judiciário.", "Depende sempre de processo judicial."], answer: 1, why: "Anulação: ilegalidade, efeitos ex tunc. Revogação: conveniência/oportunidade, efeitos ex nunc. Administração e Judiciário podem anular; só a Administração revoga." },
+  { id: "q29", disc: "Específicas", topic: "Informática", edital: ["esp-info-hw"], art: "Anexo II", stem: "Memória RAM e disco rígido distinguem-se, em regra, porque a RAM:", choices: ["É memória de armazenamento permanente, como o HD.", "É memória volátil de acesso rápido, esvaziada ao desligar o computador.", "Substitui a placa-mãe.", "É um dispositivo apenas de entrada."], answer: 1, why: "RAM: volátil, trabalho rápido. HD/SSD: armazenamento permanente. Confundir os dois é pegadinha clássica de informática em nível médio." },
   { id: "q30", disc: "Específicas", topic: "Anexo I", art: "Edital Anexo I", stem: "Para instalação de circo e espetáculos públicos de particulares, o Fiscal de Posturas, segundo o Anexo I, deve exigir:", choices: ["Alvará da Receita Federal.", "Documento de responsabilidade de engenheiro devidamente habilitado.", "Licença ambiental estadual, sempre.", "Contrato com a Vigilância Sanitária federal."], answer: 1, why: "Anexo I: verificar o licenciamento para circos e espetáculos públicos de particulares, inclusive exigindo documento de responsabilidade de engenheiro habilitado." },
   { id: "q31", disc: "Português", topic: "Concordância", art: "Gramática", stem: "Assinale a frase com concordância verbal de acordo com a norma culta:", choices: ["Haviam muitas irregularidades no logradouro.", "Fazem dois anos que a lei foi publicada.", "Existem prazos distintos para posse e exercício.", "Bateu três horas no relógio da Câmara."], answer: 2, why: "Haver no sentido de existir é impessoal: havia. Fazer indicando tempo é impessoal: faz. Bater horas: bateram três horas. 'Existem prazos' concorda com o sujeito." },
   { id: "q32", disc: "Português", topic: "Regência", art: "Gramática", stem: "A regência está correta em:", choices: ["O edital visa o cargo de Fiscal.", "O servidor assistiu o treinamento ontem, no sentido de ver.", "A chefia obedeceu o regulamento interno.", "O candidato aspira ao cargo público."], answer: 3, why: "Visar (= ter por objetivo) e aspirar (= pretender) pedem a. Assistir (= ver) pede a. Obedecer pede a. 'Aspira ao cargo' está certo." },
@@ -1398,10 +1749,10 @@ const MORE_BANK = [
   { id: "q34", disc: "Português", topic: "Pontuação", art: "Gramática", stem: "A vírgula está corretamente empregada em:", choices: ["O fiscal, lavrou o auto de infração.", "Tanguá, 22 de novembro de 2026.", "A posse ocorreu, no prazo legal sem atraso.", "Quem, estudar o Art. 37 passa na prova."], answer: 1, why: "Vírgula em vocativo/local e data é clássica. Não se separa sujeito de verbo ('O fiscal, lavrou')." },
   { id: "q35", disc: "Português", topic: "Formação", art: "Morfologia", stem: "Em 'improbidade', o processo de formação é, principalmente:", choices: ["Composição por justaposição.", "Derivação prefixal e sufixal a partir de 'probo'.", "Hibridismo.", "Onomatopeia."], answer: 1, why: "Im- (prefixo de negação) + probo + -idade (sufixo). Derivação prefixal e sufixal, não composição por justaposição." },
   { id: "q36", disc: "Português", topic: "Semântica", art: "Gramática", stem: "Em 'O servidor agiu com mãos limpas', há, em relação a 'mãos limpas':", choices: ["Sentido denotativo, literal.", "Sentido conotativo, figurado.", "Neologismo técnico.", "Vício de linguagem por cacofonia."], answer: 1, why: "Conotação: sentido figurado (probidade). Denotação seria o sentido literal das mãos." },
-  { id: "q37", disc: "Português", topic: "Coesão", art: "Gramática", stem: "O conectivo que expressa oposição é:", choices: ["Portanto.", "Porque.", "Contudo.", "Conforme."], answer: 2, why: "Contudo/porém/entretanto = oposição. Portanto = conclusão. Porque = causa. Conforme = conformidade." },
+  { id: "q37", disc: "Português", topic: "Coesão", edital: ["pt-coes"], art: "Gramática", stem: "O conectivo que expressa oposição é:", choices: ["Portanto.", "Porque.", "Contudo.", "Conforme."], answer: 2, why: "Contudo/porém/entretanto = oposição. Portanto = conclusão. Porque = causa. Conforme = conformidade." },
   { id: "q38", disc: "Português", topic: "Crase", art: "Gramática", stem: "NÃO se usa crase em:", choices: ["Referiu-se à Lei 946/2014.", "Foi à Câmara Municipal.", "Chegou à Prefeitura cedo.", "Caminhou à pé até o local de prova."], answer: 3, why: "À pé é erro: pé é masculino. 'A pé' sem crase." },
   { id: "q39", disc: "Específicas", topic: "Ética", art: "Anexo II", stem: "No serviço público, a ética profissional exige, em especial:", choices: ["Priorizar interesse particular desde que não haja crime.", "Sigilo funcional, urbanidade e primazia do interesse público.", "Aceitar presente de fiscalizado, se de pequeno valor.", "Omitir irregularidade para preservar a chefia."], answer: 1, why: "Alinha-se aos deveres do Art. 204 da Lei 946 (zelo, sigilo, urbanidade, levar irregularidades ao conhecimento da autoridade) e ao Anexo II (ética profissional)." },
-  { id: "q40", disc: "Específicas", topic: "Informática", art: "Anexo II", stem: "Backup, em segurança da informação, é:", choices: ["Apagar arquivos temporários.", "Cópia de segurança dos dados para recuperação em caso de perda.", "Formatação do disco.", "Antivírus em tempo real."], answer: 1, why: "Backup = cópia de segurança. Não confundir com formatação nem com antivírus." }
+  { id: "q40", disc: "Específicas", topic: "Informática", edital: ["esp-info-seg"], art: "Anexo II", stem: "Backup, em segurança da informação, é:", choices: ["Apagar arquivos temporários.", "Cópia de segurança dos dados para recuperação em caso de perda.", "Formatação do disco.", "Antivírus em tempo real."], answer: 1, why: "Backup = cópia de segurança. Não confundir com formatação nem com antivírus." }
 ];
 MORE_BANK.forEach((q) => BANK.push(q));
 
@@ -1415,8 +1766,8 @@ const MORE_BANK2 = [
   { id: "q47", disc: "Português", topic: "Ortografia", sub: "Acentuação", level: "média", art: "Acordo Ortográfico", stem: "Assinale a oxítona acentuada de acordo com a regra:", choices: ["júri.", "táxi.", "parabéns.", "líder."], answer: 2, why: "Oxítonas acentuam-se em a(s), e(s), o(s), em, ens. 'Parabéns' é oxítona em -ens. 'Júri', 'táxi' e 'líder' são paroxítonas.", alts: ["Paroxítona terminada em i.", "Paroxítona terminada em i.", "Certo: oxítona em -ens.", "Paroxítona terminada em r."] },
   { id: "q48", disc: "Português", topic: "Concordância", sub: "Concordância nominal", level: "média", art: "Gramática", stem: "A concordância nominal está correta em:", choices: ["Segue anexo as certidões.", "É proibido permanência de ambulante sem licença.", "É necessário a apresentação do documento.", "Muito obrigado, disse a servidora."], answer: 1, why: "'É proibido' fica invariável sem artigo. Com artigo, varia: 'é necessária a apresentação'. 'Anexo' concorda: 'seguem anexas'. 'Obrigado' concorda com o falante.", alts: ["Certo seria 'seguem anexas as certidões'.", "Certo: sem artigo, 'proibido' não varia.", "Com artigo: 'é necessária a apresentação'.", "A servidora diria 'obrigada'."] },
   { id: "q49", disc: "Português", topic: "Sintaxe", sub: "Colocação pronominal", level: "média", art: "Gramática", stem: "A colocação pronominal está de acordo com a norma culta em:", choices: ["Me informe o local de prova.", "Não o convidei para a sindicância.", "Devolver-lhe-ei o auto amanhã, na fala cotidiana obrigatória da prova objetiva.", "Vou se pronunciar no recurso."], answer: 1, why: "Pronome átono não inicia oração (próclise após 'não'). 'Me informe' no início é coloquial. Mesóclise é rara e formal. 'Vou se' é erro.", alts: ["Átono não inicia período na norma culta.", "Certo: próclise após palavra negativa.", "Mesóclise não é o que a prova de nível médio costuma exigir como 'obrigatória'.", "'Vou se' é desvio."] },
-  { id: "q50", disc: "Português", topic: "Funções da linguagem", sub: "Função referencial", level: "fácil", art: "Anexo II · funções da linguagem", stem: "O edital que informa data, horário e local da prova exemplifica, predominantemente, a função:", choices: ["Poética.", "Referencial (denotativa).", "Emotiva.", "Fática."], answer: 1, why: "Função referencial: informar sobre o contexto, linguagem denotativa. Poética foca a mensagem estética; emotiva, o emissor; fática, o canal.", alts: ["Poética: estética do texto.", "Certo: informar fatos.", "Emotiva: sentimento do emissor.", "Fática: testar o canal ('alô?')."] },
-  { id: "q51", disc: "Português", topic: "Tipos e gêneros", sub: "Texto dissertativo", level: "fácil", art: "Anexo II · tipos e gêneros", stem: "Um texto que defende uma tese com argumentos é, quanto ao tipo, principalmente:", choices: ["Narrativo.", "Dissertativo-argumentativo.", "Injuntivo.", "Descritivo."], answer: 1, why: "Dissertação argumentativa: tese + argumentos. Narração relata fatos; injunção instrui; descrição caracteriza.", alts: ["Narração: enredo, personagens, tempo.", "Certo.", "Injunção: receita, edital de 'faça X'.", "Descrição: características."] },
+  { id: "q50", disc: "Português", topic: "Funções da linguagem", sub: "Função referencial", level: "fácil", edital: ["pt-func"], art: "Anexo II · funções da linguagem", stem: "O edital que informa data, horário e local da prova exemplifica, predominantemente, a função:", choices: ["Poética.", "Referencial (denotativa).", "Emotiva.", "Fática."], answer: 1, why: "Função referencial: informar sobre o contexto, linguagem denotativa. Poética foca a mensagem estética; emotiva, o emissor; fática, o canal.", alts: ["Poética: estética do texto.", "Certo: informar fatos.", "Emotiva: sentimento do emissor.", "Fática: testar o canal ('alô?')."] },
+  { id: "q51", disc: "Português", topic: "Tipos e gêneros", sub: "Texto dissertativo", level: "fácil", edital: ["pt-gen"], art: "Anexo II · tipos e gêneros", stem: "Um texto que defende uma tese com argumentos é, quanto ao tipo, principalmente:", choices: ["Narrativo.", "Dissertativo-argumentativo.", "Injuntivo.", "Descritivo."], answer: 1, why: "Dissertação argumentativa: tese + argumentos. Narração relata fatos; injunção instrui; descrição caracteriza.", alts: ["Narração: enredo, personagens, tempo.", "Certo.", "Injunção: receita, edital de 'faça X'.", "Descrição: características."] },
   { id: "q52", disc: "Português", topic: "Semântica", sub: "Ambiguidade", level: "média", art: "Anexo II · ambiguidade", stem: "Há ambiguidade em:", choices: ["O fiscal lavrou o auto ontem.", "O servidor viu o chefe no gabinete com o relógio quebrado.", "A posse ocorreu no prazo legal.", "Tanguá fica no Estado do Rio de Janeiro."], answer: 1, why: "Não fica claro se o relógio quebrado é do chefe, do servidor ou do gabinete. As outras são unívocas.", alts: ["Unívoco.", "Certo: anexo mal colocado.", "Unívoco.", "Unívoco."] },
   { id: "q53", disc: "Português", topic: "Semântica", sub: "Paronímia", level: "média", art: "Anexo II · paronímia", stem: "São parônimos:", choices: ["casa / lar.", "comprimento / cumprimento.", "lei / edital.", "posse / exercício."], answer: 1, why: "Parônimos: grafia e som parecidos, sentido diferente (comprimento ≠ cumprimento). Casa/lar são sinônimos aproximados.", alts: ["Sinônimos aproximados.", "Certo.", "Não são parônimos.", "Conceitos jurídicos distintos, sem paronímia."] },
   { id: "q54", disc: "Português", topic: "Pontuação", sub: "Aposto", level: "média", art: "Gramática", stem: "A pontuação do aposto está correta em:", choices: ["Tanguá cidade do Rio de Janeiro aplica a prova.", "Tanguá, município do Estado do Rio de Janeiro, sedia a prova.", "Tanguá município, do Estado sedia a prova.", "Tanguá município do Estado, do Rio de Janeiro sedia a prova."], answer: 1, why: "Aposto explicativo isolado por vírgulas. Sem as duas vírgulas, o aposto não se marca.", alts: ["Falta isolar o aposto.", "Certo.", "Vírgula solta, sem par.", "Quebra o sintagma."] },
@@ -1427,7 +1778,7 @@ const MORE_BANK2 = [
   { id: "q59", disc: "Legislação", topic: "Readaptação", sub: "Provisória", level: "média", art: "Lei 946, Art. 30", stem: "A readaptação provisória, na Lei 946/2014, é o afastamento temporário para tarefas mais compatíveis com a capacidade física e mental, por período máximo de:", choices: ["Seis meses.", "Um ano.", "Dois anos, consecutivos ou não.", "Cinco anos."], answer: 2, why: "Art. 30, §1º: máximo de dois anos, consecutivos ou não, com base em laudo da Perícia Médica. Readaptação também é forma de provimento (Art. 20, VII) e de vacância (Art. 49, III).", alts: ["Não é o prazo do §1º.", "Não é o prazo do §1º.", "Certo.", "Confunde com reversão (5 anos da aposentadoria, Art. 28, II, d)."] },
   { id: "q60", disc: "Legislação", topic: "Posse", sub: "Nomeação sem efeito", level: "média", art: "Lei 946, Art. 35, §4º", stem: "Se a posse não ocorrer no prazo do Art. 35 da Lei 946/2014, ou em caso de desistência do aprovado:", choices: ["O candidato entra automaticamente em exercício.", "O ato de nomeação será tornado sem efeito e cessam as obrigações da Administração para com o concursado.", "Abre-se PAD contra o candidato.", "Prorroga-se a posse por um ano, de ofício."], answer: 1, why: "Art. 35, §4º. O caput dá 30 dias da publicação da nomeação, prorrogáveis por igual período.", alts: ["Sem posse não há exercício (Art. 13, §2º).", "Certo.", "PAD é para servidor, não para quem não tomou posse.", "A prorrogação do caput é por igual período, a critério da autoridade, não de um ano de ofício."] },
   { id: "q61", disc: "Legislação", topic: "Estabilidade", sub: "Perda do cargo", level: "média", art: "Lei 946, Art. 48", stem: "O servidor estável perderá o cargo, na Lei 946/2014, EXCETO:", choices: ["Em virtude de sentença judicial transitada em julgado.", "Mediante processo administrativo, com ampla defesa e contraditório.", "Por avaliação periódica de desempenho, com ampla defesa e contraditório.", "Por simples decisão unilateral da chefia imediata, sem processo."], answer: 3, why: "Art. 48, I a III. Não há perda de cargo estável por ato isolado da chefia, sem as garantias do artigo.", alts: ["Inciso I.", "Inciso II.", "Inciso III.", "Certo: não previsto."] },
-  { id: "q62", disc: "Legislação", topic: "Direitos", sub: "Ausências abonadas", level: "média", art: "Lei 946, Art. 176", stem: "Na Lei 946/2014, a ausência abonada por casamento e por falecimento de cônjuge, companheiro, ascendentes, madrasta ou padrasto, descendentes, enteados e irmãos é de:", choices: ["Dois dias cada, comprovação em 24 horas.", "Cinco dias, sem comprovação.", "Oito dias cada, com comprovação em até 48 horas da ocorrência.", "Quinze dias, só para casamento."], answer: 2, why: "Art. 176, V e VI: oito dias. Parágrafo único: comprovar por documento próprio até 48 horas da ocorrência. Doação de sangue: 1 dia, com intervalo mínimo de 180 dias (inciso IV).", alts: ["Prazos e prazo de prova errados.", "Prazo e comprovação errados.", "Certo.", "Não é o inciso V."] },
+  { id: "q62", disc: "Legislação", topic: "Direitos", sub: "Ausências abonadas", level: "média", edital: ["leg-946-dir"], art: "Lei 946, Art. 176", stem: "Na Lei 946/2014, a ausência abonada por casamento e por falecimento de cônjuge, companheiro, ascendentes, madrasta ou padrasto, descendentes, enteados e irmãos é de:", choices: ["Dois dias cada, comprovação em 24 horas.", "Cinco dias, sem comprovação.", "Oito dias cada, com comprovação em até 48 horas da ocorrência.", "Quinze dias, só para casamento."], answer: 2, why: "Art. 176, V e VI: oito dias. Parágrafo único: comprovar por documento próprio até 48 horas da ocorrência. Doação de sangue: 1 dia, com intervalo mínimo de 180 dias (inciso IV).", alts: ["Prazos e prazo de prova errados.", "Prazo e comprovação errados.", "Certo.", "Não é o inciso V."] },
   { id: "q63", disc: "Legislação", topic: "Recurso", sub: "Prazo", level: "fácil", art: "Lei 946, Art. 198", stem: "O prazo para apresentação de recurso, na Lei 946/2014, é de:", choices: ["Cinco dias da publicação.", "Dez dias da posse.", "Quinze dias, contados da ciência da decisão.", "Trinta dias da nomeação."], answer: 2, why: "Art. 198. Parágrafo único: se provido, os efeitos retroagem à data da decisão impugnada.", alts: ["Não é o Art. 198.", "Não é o Art. 198.", "Certo.", "Confunde com posse."] },
   { id: "q64", disc: "Legislação", topic: "Petição", sub: "Prescrição do direito de requerer", level: "média", art: "Lei 946, Art. 199", stem: "O direito de requerer, na Lei 946/2014, prescreve em cinco anos quanto a:", choices: ["Qualquer advertência.", "Atos de demissão, cassação de aposentadoria ou disponibilidade, ou que afetem interesse patrimonial e créditos das relações de emprego.", "Faltas pontuais de dez minutos.", "Pedido de férias."], answer: 1, why: "Art. 199: 5 anos nesses atos (contados da exoneração ou demissão) e 2 anos nos demais casos. Não confundir com a prescrição da ação disciplinar (Art. 271).", alts: ["Advertência, na ação disciplinar, prescreve em 180 dias (Art. 271, III).", "Certo.", "Não é hipótese do Art. 199.", "Não é a hipótese de 5 anos."] },
   { id: "q65", disc: "Legislação", topic: "Acumulação", sub: "Opção no rito sumário", level: "média", art: "Lei 946, Art. 233", stem: "Detectada acumulação ilegal de cargos, a autoridade notificará o servidor para apresentar opção no prazo improrrogável de:", choices: ["Cinco dias.", "Dez dias, contados da ciência.", "Trinta dias.", "Sessenta dias."], answer: 1, why: "Art. 233: dez dias, improrrogáveis, contados da ciência. Na omissão, rito sumário. O rito sumário também apura abandono e inassiduidade (Art. 232).", alts: ["Não é o prazo do Art. 233.", "Certo.", "Confunde com sindicância (30+30).", "Confunde com PAD (60+60)."] },
@@ -1436,10 +1787,10 @@ const MORE_BANK2 = [
   { id: "q68", disc: "Específicas", topic: "CF 37", sub: "Publicidade", level: "média", art: "CF Art. 37, §1º", stem: "A publicidade dos atos, programas, obras, serviços e campanhas dos órgãos públicos deverá, nos termos do Art. 37, §1º, da CF:", choices: ["Ter nomes, símbolos ou imagens que caracterizem promoção pessoal de autoridade.", "Ter caráter educativo, informativo ou de orientação social, sem promoção pessoal de autoridades ou servidores.", "Dispensar identificação do órgão.", "Ser feita só em redes sociais particulares do Prefeito."], answer: 1, why: "CF Art. 37, §1º. A promoção pessoal é vedada. O caput já traz publicidade como princípio (LIMPE).", alts: ["Isso é exatamente o que o §1º veda.", "Certo.", "O §1º exige caráter educativo/informativo/orientação.", "Não está no §1º."] },
   { id: "q69", disc: "Específicas", topic: "Fiscalização contábil", sub: "Noções Arts. 70–71", level: "média", art: "CF Arts. 70 e 71", stem: "A fiscalização contábil, financeira e orçamentária da União, no texto constitucional, é exercida pelo Congresso Nacional, com o auxílio:", choices: ["Do Supremo Tribunal Federal.", "Do Tribunal de Contas da União.", "Da Câmara Municipal de Tanguá.", "Do Ministério da Economia, com exclusividade."], answer: 1, why: "CF Art. 71: TCU é o órgão que auxilia o Congresso. Para o Município, o paralelo é a Câmara com auxílio do Tribunal de Contas competente — noções, sem transformar o estudo em prova de TCE. O Anexo II do Fiscal pede essa noções; PPA/LDO/LOA detalhados e LRF são programa do Agente de Controle Interno no mesmo edital.", alts: ["STF não é o órgão de contas do Art. 71.", "Certo.", "A Câmara de Tanguá não auxilia o Congresso Nacional.", "O Executivo é fiscalizado, não o fiscalizador exclusivo."] },
   { id: "q70", disc: "Específicas", topic: "Orçamento", sub: "Noções Art. 165", level: "média", art: "CF Art. 165", stem: "São leis orçamentárias previstas no Art. 165 da CF:", choices: ["Somente a lei de responsabilidade fiscal.", "O plano plurianual, as diretrizes orçamentárias e os orçamentos anuais.", "Apenas o Código Tributário Nacional.", "Somente o edital do concurso."], answer: 1, why: "Art. 165: PPA, LDO e LOA, de iniciativa do Poder Executivo. O Anexo II do Fiscal pede tributação, orçamento e finanças como noções. PPA/LDO/LOA, LRF e Lei 4.320 em profundidade estão no programa de Agente de Controle Interno, não no de Fiscal.", alts: ["LRF é lei complementar (LC 101), não as três leis do Art. 165.", "Certo.", "CTN não é lei orçamentária do Art. 165.", "Edital não é lei orçamentária."] },
-  { id: "q71", disc: "Específicas", topic: "Atos", sub: "Simples, complexo e composto", level: "média", art: "Doutrina · Anexo II", stem: "O ato complexo diferencia-se do simples, em doutrina clássica cobrada no Anexo II, porque o complexo:", choices: ["Existe com a vontade de um só órgão.", "Depende da conjugação de vontades de órgãos diversos para formar um único ato.", "É sempre ilegal.", "Só o particular pratica."], answer: 1, why: "Simples: um órgão. Complexo: vontades de órgãos diversos fundidas num ato. Composto: um ato principal + ato acessório. O Anexo II lista expressamente simples, complexos e compostos.", alts: ["Isso é ato simples.", "Certo.", "Classificação não define legalidade.", "É ato administrativo."] },
-  { id: "q72", disc: "Específicas", topic: "Atos", sub: "Gerais e individuais", level: "fácil", art: "Doutrina · Anexo II", stem: "Um decreto que disciplina, em tese, o horário de funcionamento do comércio é, quanto aos destinatários, ato:", choices: ["Individual.", "Geral (ou normativo).", "Judicial.", "Privado."], answer: 1, why: "Ato geral: destinatários indeterminados. Individual: pessoa determinada (ex.: nomeação de Fulano). O Anexo II pede atos gerais e individuais.", alts: ["Individual apontaria pessoa certa.", "Certo.", "Não é ato judicial.", "É ato administrativo."] },
-  { id: "q73", disc: "Específicas", topic: "Administração", sub: "Direta e indireta", level: "fácil", art: "Doutrina · Anexo II", stem: "Na administração indireta incluem-se, em regra:", choices: ["Somente os Ministérios.", "Autarquias, fundações públicas, empresas públicas e sociedades de economia mista.", "Apenas a Câmara Municipal.", "Somente pessoas físicas."], answer: 1, why: "Administração direta: órgãos da pessoa política (União, Estado, DF, Município). Indireta: entidades com personalidade jurídica própria (autarquia, fundação pública, empresa pública, sociedade de economia mista). Anexo II: 'administração direta e indireta e modalidades de entidades administrativas'.", alts: ["Ministérios são órgãos da direta (União).", "Certo.", "Câmara é órgão, não entidade da indireta.", "Entidades da indireta são pessoas jurídicas."] },
-  { id: "q74", disc: "Específicas", topic: "Informática", sub: "Hardware", level: "fácil", art: "Anexo II · hardware", stem: "Scanner, no hardware cobrado no Anexo II, é dispositivo principalmente de:", choices: ["Saída, como o monitor.", "Entrada, que digitaliza documentos.", "Armazenamento permanente, como o SSD.", "Rede, como o roteador."], answer: 1, why: "Scanner: entrada (digitaliza). Impressora: saída. Multifuncional combina os dois. Monitor e impressora são saída; SSD armazena; roteador é rede.", alts: ["Monitor/impressora = saída.", "Certo.", "SSD/HD = armazenamento.", "Roteador = rede."] },
+  { id: "q71", disc: "Específicas", topic: "Atos", sub: "Simples, complexo e composto", level: "média", edital: ["esp-adm-atos-class"], art: "Doutrina · Anexo II", stem: "O ato complexo diferencia-se do simples, em doutrina clássica cobrada no Anexo II, porque o complexo:", choices: ["Existe com a vontade de um só órgão.", "Depende da conjugação de vontades de órgãos diversos para formar um único ato.", "É sempre ilegal.", "Só o particular pratica."], answer: 1, why: "Simples: um órgão. Complexo: vontades de órgãos diversos fundidas num ato. Composto: um ato principal + ato acessório. O Anexo II lista expressamente simples, complexos e compostos.", alts: ["Isso é ato simples.", "Certo.", "Classificação não define legalidade.", "É ato administrativo."] },
+  { id: "q72", disc: "Específicas", topic: "Atos", sub: "Gerais e individuais", level: "fácil", edital: ["esp-adm-atos-class"], art: "Doutrina · Anexo II", stem: "Um decreto que disciplina, em tese, o horário de funcionamento do comércio é, quanto aos destinatários, ato:", choices: ["Individual.", "Geral (ou normativo).", "Judicial.", "Privado."], answer: 1, why: "Ato geral: destinatários indeterminados. Individual: pessoa determinada (ex.: nomeação de Fulano). O Anexo II pede atos gerais e individuais.", alts: ["Individual apontaria pessoa certa.", "Certo.", "Não é ato judicial.", "É ato administrativo."] },
+  { id: "q73", disc: "Específicas", topic: "Administração", sub: "Direta e indireta", level: "fácil", edital: ["esp-adm-prin"], art: "Doutrina · Anexo II", stem: "Na administração indireta incluem-se, em regra:", choices: ["Somente os Ministérios.", "Autarquias, fundações públicas, empresas públicas e sociedades de economia mista.", "Apenas a Câmara Municipal.", "Somente pessoas físicas."], answer: 1, why: "Administração direta: órgãos da pessoa política (União, Estado, DF, Município). Indireta: entidades com personalidade jurídica própria (autarquia, fundação pública, empresa pública, sociedade de economia mista). Anexo II: 'administração direta e indireta e modalidades de entidades administrativas'.", alts: ["Ministérios são órgãos da direta (União).", "Certo.", "Câmara é órgão, não entidade da indireta.", "Entidades da indireta são pessoas jurídicas."] },
+  { id: "q74", disc: "Específicas", topic: "Informática", sub: "Hardware", level: "fácil", edital: ["esp-info-hw"], art: "Anexo II · hardware", stem: "Scanner, no hardware cobrado no Anexo II, é dispositivo principalmente de:", choices: ["Saída, como o monitor.", "Entrada, que digitaliza documentos.", "Armazenamento permanente, como o SSD.", "Rede, como o roteador."], answer: 1, why: "Scanner: entrada (digitaliza). Impressora: saída. Multifuncional combina os dois. Monitor e impressora são saída; SSD armazena; roteador é rede.", alts: ["Monitor/impressora = saída.", "Certo.", "SSD/HD = armazenamento.", "Roteador = rede."] },
   { id: "q75", disc: "Específicas", topic: "CF 5º", sub: "Remédios constitucionais", level: "média", art: "CF Art. 5º", stem: "O habeas data, no Art. 5º da CF, destina-se, em síntese, a:", choices: ["Fazer cessar violência ou coação à liberdade de locomoção.", "Assegurar conhecimento ou retificação de dados relativos à pessoa, em registros de entidade governamental ou de caráter público.", "Proteger direito líquido e certo não amparado por habeas corpus ou habeas data.", "Questionar lei em tese no STF, como ação direta de inconstitucionalidade."], answer: 1, why: "Art. 5º, LXXII: habeas data. HC (LXVIII) protege locomoção. Mandado de segurança (LXIX) protege direito líquido e certo residual. ADI não é remédio do Art. 5º para o particular nesse enunciado.", alts: ["Isso é habeas corpus.", "Certo.", "Isso é mandado de segurança.", "ADI é controle concentrado, não o habeas data."] }
 ];
 MORE_BANK2.forEach((q) => BANK.push(q));
@@ -1449,18 +1800,40 @@ const MORE_BANK3 = [
   { id: "q77", disc: "Específicas", topic: "Anexo I", sub: "Ambulante", level: "fácil", art: "Edital Anexo I", stem: "Diante de comércio ambulante sem a documentação exigida, o Fiscal de Posturas deve, segundo o Anexo I:", choices: ["Impedir o comércio de quem não tenha a documentação exigida.", "Cobrar taxa de ISS no local.", "Liberar a atividade se o produto for alimentício.", "Apenas orientar, sem qualquer registro, ainda que a chefia determine o auto."], answer: 0, why: "Anexo I: impedir o comércio de quem não tenha a documentação exigida. Tributos não se confundem com posturas.", alts: ["Certo.", "ISS não é atribuição de Posturas.", "Alimento não dispensa documentação de posturas.", "O Anexo I prevê lavrar o que a chefia determinar."] },
   { id: "q78", disc: "Específicas", topic: "Anexo I", sub: "Publicidade", level: "média", art: "Edital Anexo I", stem: "A fiscalização de anúncios, alto-falantes e propaganda em muros, tapumes e vitrines, no Anexo I, compete ao Fiscal de Posturas como controle de:", choices: ["Crédito tributário de ISS sobre propaganda.", "Posturas de publicidade em logradouro e fachadas, sem lançar tributo.", "Licenciamento ambiental de ruído, exclusivo da União.", "Direito autoral da obra anunciada."], answer: 1, why: "Anexo I lista publicidade (anúncios, alto-falantes, propaganda em muros, tapumes e vitrines) como atribuição de Posturas. Não é lançamento de ISS nem direito autoral.", alts: ["Tributos.", "Certo.", "Fora do Anexo I do cargo.", "Fora do Anexo I do cargo."] },
   { id: "q79", disc: "Específicas", topic: "Anexo I", sub: "Apreensão", level: "média", art: "Edital Anexo I", stem: "Na apreensão de mercadorias, veículos, animais ou objetos em ruas, o Anexo I indica que o Fiscal de Posturas deve:", choices: ["Ficar com o bem em casa, como garantia pessoal.", "Guardar em depósito público e devolver após as formalidades e o pagamento da multa, quando couber.", "Doar imediatamente a terceiros.", "Remeter o bem à Receita Federal, sempre."], answer: 1, why: "Anexo I: apreensão, guarda em depósito público e devolução após formalidades e multa. Não é apropriação pessoal nem competência tributária federal automática.", alts: ["Vedado.", "Certo.", "Não previsto.", "Não é a regra do Anexo I."] },
-  { id: "q80", disc: "Específicas", topic: "Atos", sub: "Poder de polícia", level: "média", art: "Doutrina · Anexo II", stem: "A apreensão de mercadoria irregular em logradouro e a interdição de estabelecimento, no recorte do cargo, ligam-se sobretudo ao:", choices: ["Poder hierárquico, exclusivo da Câmara.", "Poder de polícia administrativa, com autoexecutoriedade quando a lei autoriza a medida imediata.", "Poder regulamentar do particular.", "Controle concentrado de constitucionalidade."], answer: 1, why: "Poder de polícia: condicionar e restringir direitos em nome do interesse público. Autoexecutoriedade autoriza a Administração a executar a medida (apreensão, interdição) sem prévia ordem judicial, nos limites da lei. Não confundir com hierarquia interna nem com ADI.", alts: ["Hierarquia é relação interna da Administração.", "Certo.", "Particular não exerce poder regulamentar estatal.", "ADI não é ato de polícia de rua."] },
+  { id: "q80", disc: "Específicas", topic: "Atos", sub: "Poder de polícia", level: "média", edital: ["esp-adm-atos"], art: "Doutrina · Anexo II", stem: "A apreensão de mercadoria irregular em logradouro e a interdição de estabelecimento, no recorte do cargo, ligam-se sobretudo ao:", choices: ["Poder hierárquico, exclusivo da Câmara.", "Poder de polícia administrativa, com autoexecutoriedade quando a lei autoriza a medida imediata.", "Poder regulamentar do particular.", "Controle concentrado de constitucionalidade."], answer: 1, why: "Poder de polícia: condicionar e restringir direitos em nome do interesse público. Autoexecutoriedade autoriza a Administração a executar a medida (apreensão, interdição) sem prévia ordem judicial, nos limites da lei. Não confundir com hierarquia interna nem com ADI.", alts: ["Hierarquia é relação interna da Administração.", "Certo.", "Particular não exerce poder regulamentar estatal.", "ADI não é ato de polícia de rua."] },
   { id: "q81", disc: "Português", topic: "Morfologia", sub: "Classes de palavras", level: "média", art: "Anexo II · classes de palavras", stem: "Em 'A fiscalização ocorreu ontem, conforme o edital', a palavra 'conforme' classifica-se, no contexto, como:", choices: ["Substantivo.", "Adjetivo.", "Preposição (ou locução prepositiva de conformidade).", "Interjeição."], answer: 2, why: "Conforme, aqui, introduz circunstância de conformidade (preposição). Não nomeia (substantivo), não caracteriza um substantivo (adjetivo) e não expressa emoção (interjeição).", alts: ["Não é nome.", "Não caracteriza substantivo neste uso.", "Certo.", "Interjeição seria 'nossa!', 'olha!'. "] },
-  { id: "q82", disc: "Específicas", topic: "Informática", sub: "Ransomware", level: "fácil", art: "Anexo II · segurança da informação", stem: "Ransomware, em oposição ao phishing, é principalmente:", choices: ["Página falsa para capturar senha.", "Malware que criptografa arquivos e exige resgate para devolvê-los.", "Cópia de segurança em nuvem.", "Atualização legítima do Windows."], answer: 1, why: "Ransomware: sequestro por criptografia. Phishing: engenharia social para obter dados. Backup é defesa, não o ataque.", alts: ["Isso é phishing.", "Certo.", "Backup é proteção.", "Atualização não é ransomware."] },
+  { id: "q82", disc: "Específicas", topic: "Informática", sub: "Ransomware", level: "fácil", edital: ["esp-info-seg"], art: "Anexo II · segurança da informação", stem: "Ransomware, em oposição ao phishing, é principalmente:", choices: ["Página falsa para capturar senha.", "Malware que criptografa arquivos e exige resgate para devolvê-los.", "Cópia de segurança em nuvem.", "Atualização legítima do Windows."], answer: 1, why: "Ransomware: sequestro por criptografia. Phishing: engenharia social para obter dados. Backup é defesa, não o ataque.", alts: ["Isso é phishing.", "Certo.", "Backup é proteção.", "Atualização não é ransomware."] },
   { id: "q83", disc: "Específicas", topic: "Ética", sub: "Presentes", level: "média", art: "Anexo II · ética / Lei 946 Art. 204", stem: "Aceitar presente de estabelecimento fiscalizado, para facilitar a liberação de banca em logradouro, ofende sobretudo:", choices: ["O dever de zelo, sigilo e primazia do interesse público, além da ética profissional do Anexo II.", "Apenas a Lei de Diretrizes Orçamentárias, em profundidade de TCU.", "O direito autoral da logomarca da banca.", "Nenhuma norma, se o valor for simbólico e não houver recibo."], answer: 0, why: "Ética profissional (Anexo II) e deveres do Art. 204 da Lei 946 (zelo, levar irregularidade à autoridade, urbanidade, sigilo). Interesse particular do fiscalizado não se sobrepõe ao público. LDO/TCU não são o fundamento imediato desta conduta de rua.", alts: ["Certo.", "Fora do recorte de profundidade do Fiscal.", "Não é o núcleo da ética funcional.", "Valor simbólico não legitima a vantagem."] }
 ];
 MORE_BANK3.forEach((q) => BANK.push(q));
 
 const MORE_BANK4 = [
-  { id: "q84", disc: "Legislação", topic: "Lei Orgânica", sub: "Competência do Município", level: "fácil", art: "LOM Tanguá, Art. 20, I", stem: "Na Lei Orgânica do Município de Tanguá, compete ao Município, entre outras atribuições:", choices: ["Legislar sobre direito penal.", "Legislar sobre assuntos de interesse local.", "Emitir moeda.", "Declarar guerra."], answer: 1, why: "Questão autoral. LOM Art. 20, I: compete ao Município legislar sobre assuntos de interesse local. Direito penal, moeda e declaração de guerra não são competência municipal.", alts: ["Competência da União.", "Certo: Art. 20, I.", "Competência da União.", "Competência da União."] },
-  { id: "q85", disc: "Legislação", topic: "Lei Orgânica", sub: "Emenda à LOM", level: "média", art: "LOM Tanguá, Art. 69, I e §1º", stem: "A Lei Orgânica de Tanguá poderá ser emendada, entre outras hipóteses, mediante proposta:", choices: ["De um terço dos vereadores, aprovada em turno único por maioria simples.", "De dois terços, no mínimo, dos membros da Câmara, votada em dois turnos com interstício mínimo de dez dias e aprovada por dois terços em cada turno.", "Apenas do Governador do Estado.", "De qualquer eleitor isoladamente, sem percentual mínimo."], answer: 1, why: "Questão autoral. LOM Art. 69, I: proposta de dois terços, no mínimo, dos vereadores. §1º: dois turnos, interstício mínimo de dez dias, aprovação por dois terços em cada turno. Também cabem proposta do Prefeito e proposta popular de 5% do eleitorado (incisos II e III).", alts: ["Quórum e rito incorretos.", "Certo: Art. 69, I e §1º.", "O Governador não figura no Art. 69.", "Iniciativa popular exige 5% do eleitorado (Art. 69, III)."] }
+  { id: "q84", disc: "Legislação", topic: "Lei Orgânica", sub: "Competência do Município", level: "fácil", edital: ["leg-lom"], art: "LOM Tanguá, Art. 20, I", stem: "Na Lei Orgânica do Município de Tanguá, compete ao Município, entre outras atribuições:", choices: ["Legislar sobre direito penal.", "Legislar sobre assuntos de interesse local.", "Emitir moeda.", "Declarar guerra."], answer: 1, why: "Questão autoral. LOM Art. 20, I: compete ao Município legislar sobre assuntos de interesse local. Direito penal, moeda e declaração de guerra não são competência municipal.", alts: ["Competência da União.", "Certo: Art. 20, I.", "Competência da União.", "Competência da União."] },
+  { id: "q85", disc: "Legislação", topic: "Lei Orgânica", sub: "Emenda à LOM", level: "média", edital: ["leg-lom-cam"], art: "LOM Tanguá, Art. 69, I e §1º", stem: "A Lei Orgânica de Tanguá poderá ser emendada, entre outras hipóteses, mediante proposta:", choices: ["De um terço dos vereadores, aprovada em turno único por maioria simples.", "De dois terços, no mínimo, dos membros da Câmara, votada em dois turnos com interstício mínimo de dez dias e aprovada por dois terços em cada turno.", "Apenas do Governador do Estado.", "De qualquer eleitor isoladamente, sem percentual mínimo."], answer: 1, why: "Questão autoral. LOM Art. 69, I: proposta de dois terços, no mínimo, dos vereadores. §1º: dois turnos, interstício mínimo de dez dias, aprovação por dois terços em cada turno. Também cabem proposta do Prefeito e proposta popular de 5% do eleitorado (incisos II e III).", alts: ["Quórum e rito incorretos.", "Certo: Art. 69, I e §1º.", "O Governador não figura no Art. 69.", "Iniciativa popular exige 5% do eleitorado (Art. 69, III)."] }
 ];
 MORE_BANK4.forEach((q) => BANK.push(q));
+
+const MORE_BANK5 = [
+  { id: "q86", disc: "Português", topic: "Variações linguísticas", sub: "Norma culta e variação", level: "fácil", edital: ["pt-var"], art: "Anexo II · variações linguísticas", origin: "autoral", stem: "Em prova objetiva de concurso, a variação linguística deve ser entendida, em regra, como:", choices: ["Erro que a banca sempre pune, qualquer que seja o registro.", "Fenômeno natural da língua; a prova cobra adequação à norma culta no registro formal, sem negar que outras variedades existam.", "Prova de que só existe uma forma correta em qualquer situação.", "Autorização para grafar fora do Acordo Ortográfico na redação oficial."], answer: 1, why: "Questão autoral. Variação (regional, social, situacional, histórica) existe. O edital pede a norma culta no registro formal da prova. Não há evidência IBDO transcrita neste tópico; o material segue o Anexo II.", alts: ["Confunde variação com erro absoluto.", "Certo.", "Nega a variação.", "O Acordo continua valendo na prova."] },
+  { id: "q87", disc: "Português", topic: "Coesão", sub: "Coerência", level: "média", edital: ["pt-coes"], art: "Anexo II · coesão e coerência", origin: "autoral", stem: "Há quebra de coerência, e não só de coesão, quando o texto:", choices: ["Usa o conectivo 'portanto' após uma premissa que autoriza a conclusão.", "Afirma no primeiro parágrafo que a prova é em Tanguá e, sem retificar, trata a prova como se fosse em outro município.", "Substitui 'Fiscal de Posturas' por 'o candidato' na frase seguinte.", "Emprega vírgula no aposto explicativo."], answer: 1, why: "Questão autoral. Coerência é o sentido global; contradizer o local da prova quebra a coerência. Trocar por 'o candidato' é coesão (retomada). 'Portanto' bem usado e vírgula de aposto são coesão/pontuação adequados.", alts: ["Conectivo adequado: coesão ok.", "Certo: contradição factual.", "Retomada = coesão.", "Pontuação de aposto."] },
+  { id: "q88", disc: "Português", topic: "Sintaxe", sub: "Orações coordenadas e subordinadas", level: "média", edital: ["pt-sint"], art: "Anexo II · orações", origin: "autoral", stem: "Em 'O fiscal lavrou o auto, mas o estabelecimento recorreu', a oração introduzida por 'mas' é:", choices: ["Subordinada adverbial causal.", "Coordenada sindética adversativa.", "Subordinada adjetiva restritiva.", "Coordenada sindética explicativa."], answer: 1, why: "Questão autoral. Coordenadas são independentes sintaticamente; 'mas' marca oposição (adversativa). Causal seria 'porque'; adjetiva viria com pronome relativo; explicativa típica usa 'pois/que'.", alts: ["Causal pediria 'porque/pois' de causa.", "Certo.", "Não há relativo.", "Explicativa não é o valor de 'mas'."] },
+  { id: "q89", disc: "Português", topic: "Sintaxe", sub: "Termos da oração", level: "fácil", edital: ["pt-sint"], art: "Anexo II · termos das orações", origin: "autoral", stem: "Em 'O Prefeito sancionou a lei', o termo 'a lei' funciona como:", choices: ["Sujeito.", "Objeto direto.", "Adjunto adverbial de lugar.", "Vocativo."], answer: 1, why: "Questão autoral. Sujeito: O Prefeito. Verbo transitivo direto: sancionou. Objeto direto: a lei. Não há vocativo nem adjunto de lugar.", alts: ["Sujeito é 'O Prefeito'.", "Certo.", "Não indica lugar.", "Não há chamado."] },
+  { id: "q90", disc: "Legislação", topic: "Lei Orgânica", sub: "Prefeito", level: "média", edital: ["leg-lom-pref"], art: "LOM Tanguá, Art. 94, III e IV", origin: "autoral", stem: "Segundo a Lei Orgânica de Tanguá, compete ao Prefeito, entre outras atribuições:", choices: ["Exercer, sozinho, o Poder Legislativo municipal, dispensando a Câmara.", "Sancionar, promulgar e fazer publicar as leis aprovadas pela Câmara, expedir regulamentos para sua execução e vetar, no todo ou em parte, os projetos aprovados.", "Emendar a Lei Orgânica em turno único, por decreto.", "Nomear vereadores para a legislatura."], answer: 1, why: "Questão autoral. LOM Art. 94, III e IV. O Legislativo é da Câmara (Art. 43). Emenda à LOM segue o Art. 69, não decreto do Prefeito em turno único. Vereadores são eleitos.", alts: ["Art. 43: Legislativo = Câmara.", "Certo: Art. 94, III e IV.", "Art. 69 rege emenda à LOM.", "Vereadores não são nomeados pelo Prefeito."] },
+  { id: "q91", disc: "Legislação", topic: "Lei Orgânica", sub: "Câmara", level: "fácil", edital: ["leg-lom-cam"], art: "LOM Tanguá, Art. 43", origin: "autoral", stem: "Na Lei Orgânica de Tanguá, o Poder Legislativo é exercido:", choices: ["Pelo Prefeito, em decreto.", "Pela Câmara de Vereadores, com legislatura de quatro anos.", "Pelo Tribunal de Contas da União, com exclusividade.", "Pelo Governador do Estado."], answer: 1, why: "Questão autoral. LOM Art. 43, caput e parágrafo único: Câmara; legislatura de quatro anos, cada ano uma sessão legislativa.", alts: ["Prefeito é Executivo (Art. 94).", "Certo.", "TCU não exerce o Legislativo municipal.", "Governador não é órgão legislativo de Tanguá."] },
+  { id: "q92", disc: "Legislação", topic: "Licenças", sub: "Modalidades e estágio", level: "média", edital: ["leg-946-dir"], art: "Lei 946, Art. 127, §5º", origin: "autoral", stem: "O servidor em estágio probatório, na Lei 946/2014, só terá direito, dentre as licenças do Art. 127, a:", choices: ["Todas as onze modalidades do caput, inclusive interesses particulares.", "Licença gestante, paternidade e para tratamento de saúde.", "Somente licença-prêmio.", "Licença para tratar de interesses particulares, de ofício."], answer: 1, why: "Questão autoral. Art. 127, §5º: no período probatório, só gestante, paternidade e tratamento de saúde. O caput lista onze modalidades; o §5º restringe o estágio.", alts: ["O §5º restringe.", "Certo.", "Licença-prêmio não está no §5º.", "Interesses particulares não cabem no estágio, pelo §5º."] },
+  { id: "q93", disc: "Legislação", topic: "Proibições", sub: "Presente", level: "fácil", edital: ["leg-946-disc"], art: "Lei 946, Art. 205, XII", origin: "autoral", stem: "À luz do Art. 205 da Lei 946/2014, ao servidor é proibido:", choices: ["Tratar o público com urbanidade.", "Receber propina, comissão, presente ou vantagem de qualquer espécie, em razão de suas atribuições.", "Levar irregularidade ao conhecimento da autoridade.", "Guardar sigilo sobre assunto da repartição."], answer: 1, why: "Questão autoral. Art. 205, XII: proibido receber presente em razão das atribuições. Urbanidade, levar irregularidade e sigilo são deveres do Art. 204.", alts: ["Dever, Art. 204, XI.", "Certo: Art. 205, XII.", "Dever, Art. 204, VI.", "Dever, Art. 204, VIII."] },
+  { id: "q94", disc: "Específicas", topic: "Atos", sub: "Unilaterais", level: "média", edital: ["esp-adm-atos-class"], art: "Doutrina · Anexo II", origin: "autoral", stem: "O auto de interdição de estabelecimento, praticado pela Administração no exercício do poder de polícia, é, quanto ao número de vontades, ato:", choices: ["Bilateral, porque o particular precisa concordar.", "Unilateral: forma-se com a vontade da Administração, independentemente de acordo com o fiscalizado.", "Multilateral, porque envolve União, Estado e Município em todo caso.", "Judicial, porque só o juiz interdita."], answer: 1, why: "Questão autoral. Ato administrativo típico é unilateral. Bilateral seria contrato. Multilateral exigiria várias partes em acordo. Interdição de polícia administrativa não depende de sentença, quando a lei autoriza (autoexecutoriedade).", alts: ["Polícia administrativa não exige concordância do particular.", "Certo.", "Não é o critério desta classificação.", "Pode haver controle judicial posterior; o ato em si é administrativo."] },
+  { id: "q95", disc: "Específicas", topic: "Procedimento", sub: "Formação do ato", level: "média", edital: ["esp-adm-proc"], art: "Doutrina · Anexo II", origin: "autoral", stem: "O procedimento administrativo, no recorte do Anexo II (formação do ato), corresponde sobretudo a:", choices: ["O processo penal de competência da Justiça Federal.", "A sequência de atos preparatórios que antecedem a decisão administrativa, distinta do processo judicial.", "O recurso extraordinário no STF.", "A emenda à Constituição Federal."], answer: 1, why: "Questão autoral. Anexo II pede procedimento na formação do ato. Não é processo penal, RE nem PEC. Evidência IBDO insuficiente neste subassunto; a questão cobre o conceito básico exigido pelo edital.", alts: ["Fora do recorte.", "Certo.", "Fora do recorte.", "Fora do recorte."] },
+  { id: "q96", disc: "Específicas", topic: "Agentes públicos", sub: "Servidor e funcionário", level: "média", edital: ["esp-adm-ag"], art: "Doutrina · Anexo II", origin: "autoral", stem: "No vocabulário cobrado em noções de Direito Administrativo, é correto afirmar que:", choices: ["Agente público é só o servidor efetivo estável.", "Agente público é gênero; servidor estatutário (como o da Lei 946) é espécie, distinto do empregado público celetista de empresa pública ou sociedade de economia mista.", "Cargo em comissão e cargo efetivo são a mesma investidura.", "Todo particular colaborador é servidor estável."], answer: 1, why: "Questão autoral. Anexo II distingue agente, servidor e funcionário e a natureza da relação. Efetivo (concurso + estatuto) ≠ comissão (livre nomeação) ≠ emprego público (CLT na indireta). Estabilidade não se estende a todo particular.", alts: ["O gênero é mais amplo.", "Certo.", "Art. 22 da Lei 946 distingue efetivo e comissão.", "Particular não se torna estável por colaborar."] },
+  { id: "q97", disc: "Específicas", topic: "Organização do Estado", sub: "Entes federativos", level: "fácil", edital: ["esp-cf-mun"], art: "CF Art. 18", origin: "autoral", stem: "A organização político-administrativa da República Federativa do Brasil compreende, nos termos do Art. 18 da CF:", choices: ["Somente a União e os Estados.", "A União, os Estados, o Distrito Federal e os Municípios, todos autônomos nos termos da Constituição.", "Apenas os Municípios, submetidos ao Governador.", "A União e as autarquias, com exclusão dos Municípios."], answer: 1, why: "Questão autoral. CF Art. 18, caput. Autarquias são da administração indireta, não substituem os entes do Art. 18. Município não se submete ao Governador como órgão interno.", alts: ["Faltam DF e Municípios.", "Certo.", "Município é ente autônomo.", "Autarquia não é ente do Art. 18."] },
+  { id: "q98", disc: "Específicas", topic: "Informática", sub: "Windows", level: "fácil", edital: ["esp-info-so"], art: "Anexo II · sistemas operacionais Microsoft", origin: "autoral", stem: "No ambiente Windows cobrado em noções, a combinação Alt+Tab serve, em regra, para:", choices: ["Desligar o computador imediatamente.", "Alternar entre aplicativos abertos.", "Formatar o disco rígido.", "Enviar e-mail no Outlook sem confirmação."], answer: 1, why: "Questão autoral. Alt+Tab: troca de janelas/aplicativos. O edital não fixa versão do Windows; o atalho é conceito geral de ambiente Microsoft. Formatar disco e desligar não são função desse atalho.", alts: ["Não é o atalho de desligar.", "Certo.", "Formatação não é Alt+Tab.", "Não dispara e-mail."] },
+  { id: "q99", disc: "Específicas", topic: "Informática", sub: "Office", level: "fácil", edital: ["esp-info-so"], art: "Anexo II · Pacote Microsoft Office", origin: "autoral", stem: "No Pacote Microsoft Office, em noções de nível médio, Excel destina-se principalmente a:", choices: ["Edição de texto corrido, como o Word.", "Planilhas, células, fórmulas simples e gráficos.", "Somente apresentação de slides.", "Administração de servidor de banco de dados."], answer: 1, why: "Questão autoral. Excel = planilha. Word = texto. PowerPoint = slides. Banco de dados/servidor está fora do edital. O edital não indica versão; não se cobre VBA nem Power Query.", alts: ["Isso é Word.", "Certo.", "Isso é PowerPoint.", "Fora do edital."] },
+  { id: "q100", disc: "Específicas", topic: "Informática", sub: "Internet Explorer", level: "fácil", edital: ["esp-info-so"], art: "Anexo II · Internet Explorer", origin: "autoral", stem: "O Internet Explorer, citado no Anexo II, é:", choices: ["Um sistema operacional da Apple.", "Navegador da Microsoft para acesso à web, hoje em desuso em favor do Edge, sem deixar de ser o programa nomeado no edital.", "Um antivírus da Google.", "Um aplicativo de planilha, equivalente ao Excel."], answer: 1, why: "Questão autoral. O edital menciona Internet Explorer; não se substitui o tópico por Edge sem registrar a diferença. IE é navegador Microsoft. Edge o sucedeu. Não é SO da Apple, nem antivírus, nem planilha.", alts: ["IE não é macOS.", "Certo.", "Não é antivírus.", "Planilha é Excel."] },
+  { id: "q101", disc: "Específicas", topic: "Informática", sub: "Google Chrome", level: "fácil", edital: ["esp-info-so"], art: "Anexo II · Google Chrome", origin: "autoral", stem: "No Google Chrome, a barra de endereço (omnibox) serve principalmente para:", choices: ["Formatar o HD.", "Digitar endereço de sítio ou termo de busca para navegar na web.", "Instalar o Windows.", "Substituir a memória RAM."], answer: 1, why: "Questão autoral. Chrome: navegador. Omnibox = URL ou busca. Hardware e instalação do SO não se fazem por essa barra.", alts: ["Não formata disco.", "Certo.", "Não instala SO.", "Não substitui RAM."] },
+  { id: "q102", disc: "Específicas", topic: "Informática", sub: "Impressoras", level: "fácil", edital: ["esp-info-hw"], art: "Anexo II · impressoras e multifuncionais", origin: "autoral", stem: "Impressora e scanner distinguem-se, no hardware do Anexo II, porque:", choices: ["A impressora é dispositivo de entrada; o scanner é só armazenamento.", "A impressora é, em regra, dispositivo de saída (papel); o scanner é de entrada (digitaliza). Multifuncional reúne as duas funções.", "Ambos são apenas memória volátil, como a RAM.", "Nenhum dos dois se conecta ao computador."], answer: 1, why: "Questão autoral. Saída = impressora. Entrada = scanner. Multifuncional combina. RAM é memória, não periférico de impressão/digitalização.", alts: ["Inverte entrada/saída.", "Certo.", "RAM não é impressora/scanner.", "Periféricos conectam-se sim."] },
+  { id: "q103", disc: "Específicas", topic: "Provimento CF", sub: "Nomeação e vacância", level: "média", edital: ["esp-adm-prov-vac"], art: "Anexo II · provimento e vacância / Lei 946 Arts. 20 e 49", origin: "autoral", stem: "Cruzando o Anexo II de específicas com a Lei 946/2014, é correto afirmar que:", choices: ["Exoneração é forma de provimento, ao lado da nomeação.", "Nomeação é forma de provimento (Art. 20); exoneração é forma de vacância (Art. 49) e não figura no elenco de penalidades do Art. 217.", "Demissão e exoneração são sempre sinônimos no estatuto.", "Vacância só ocorre por falecimento."], answer: 1, why: "Questão autoral. O Anexo II de específicas pede formas de provimento e vacância; a fonte local é a Lei 946 Arts. 20 e 49. Exoneração esvazia o cargo; demissão é penalidade (Art. 217). Vacância tem várias hipóteses (Art. 49).", alts: ["Exoneração não está no Art. 20.", "Certo.", "Demissão é pena; exoneração não.", "Art. 49 lista várias causas."] }
+];
+MORE_BANK5.forEach((q) => BANK.push(q));
 
 function regradeStoredAnswers() {
   const ans = loadAnswers();
@@ -1963,7 +2336,9 @@ if (btnImport) {
         renderCal(document.querySelector(".chip.active") ? document.querySelector(".chip.active").dataset.filter : "all");
         renderEdital();
         renderQuestoes();
-try { renderSimHome(); } catch (_) {}
+        try { renderSimHome(); } catch (_) {}
+        try { renderCobertura(); } catch (_) {}
+        try { renderMateriais(); } catch (_) {}
         renderCaderno();
         try { renderStatsLive(); } catch (_) {}
       } catch (err) {

@@ -305,6 +305,11 @@ th { color: var(--primary); font-weight: 600; font-size: 12px; letter-spacing: .
 
 .tree-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .tree-item input { margin-top: 3px; accent-color: var(--primary); width: 18px; height: 18px; }
+#cobertura-box .tree-item { flex-wrap: wrap; }
+#cobertura-box .tree-item > span { flex: 1; min-width: 0; }
+#cobertura-box .filters { margin: 8px 0; }
+#cobertura-box #cov-open { margin: 16px 0; }
+#cobertura-box .pri { margin-bottom: 4px; }
 .pri { font-size: 11px; color: var(--gold); text-transform: uppercase; letter-spacing: .06em; }
 .tree-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
