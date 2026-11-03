@@ -323,6 +323,25 @@ th { color: var(--primary); font-weight: 600; font-size: 12px; letter-spacing: .
 .dia-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: center; }
 .dia-nav .btn { min-height: 44px; }
 
+.dia-steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.dia-steps::before {
+  content: ""; position: absolute; left: 15px; top: 8px; bottom: 8px; width: 2px; background: var(--line);
+}
+.dia-step { display: flex; gap: 14px; align-items: flex-start; position: relative; margin: 0 0 16px; }
+.dia-step-num {
+  flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; z-index: 1;
+}
+.dia-step.done .dia-step-num { background: var(--good); }
+.dia-step-body { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--card); }
+.dia-step.done .dia-step-body { border-color: var(--good-line); background: var(--ok-bg); }
+.dia-step-body .when { color: var(--gold); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 4px; }
+.dia-step-body h3 { font-size: 16px; margin: 0 0 8px; }
+.dia-step-body p { margin-bottom: 8px; }
+.dia-step-body .check { margin-top: 8px; }
+.dia-head .kicker { color: var(--muted); font-size: 14px; margin: 0 0 6px; }
+
 .prog { height: 8px; background: var(--bg-2); border-radius: 99px; overflow: hidden; margin: 10px 0 6px; }
 .prog i { display: block; height: 100%; background: var(--good); min-width: 0; }
 
@@ -392,6 +411,8 @@ footer { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px
   .backup-bar { flex-direction: column; align-items: stretch; }
   .dash, .q-dash { grid-template-columns: 1fr 1fr; }
   .dia-nav { flex-direction: column; align-items: stretch; }
+  .dia-steps::before { left: 14px; }
+  .dia-step { gap: 10px; }
   .yt-card { padding: 12px; }
   .q-search-lab, .q-search-lab input, .search-field { width: 100%; min-width: 0; }
   .filters { overflow-x: visible; }
