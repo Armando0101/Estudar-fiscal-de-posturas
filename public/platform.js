@@ -405,7 +405,7 @@ function tfPaintChrome() {
   if (!TF.user) {
     slot.innerHTML = `<button type="button" class="btn" id="btn-enter">Entrar</button>`;
     const b = document.getElementById("btn-enter");
-    if (b) b.addEventListener("click", () => tfShowGate(false));
+    if (b) b.addEventListener("click", () => tfShowGate(true));
     return;
   }
   const nick = tfEsc(TF.user.nickname || TF.user.username);
