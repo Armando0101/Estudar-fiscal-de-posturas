@@ -315,7 +315,10 @@ function lsGet(k) {
 }
 function lsSet(k, v) {
   try { window.localStorage.setItem(storageKey(k), v); } catch {}
-  if (k !== themeKey && window.TF && window.TF.user && typeof window.tfScheduleSync === "function") {
+  if (k === themeKey) return;
+  if (window.TF && window.TF.applying) return;
+  if (window.TF && window.TF.user && typeof window.tfScheduleSync === "function") {
+    if (typeof window.tfMarkDirty === "function") window.tfMarkDirty(k);
     window.tfScheduleSync();
   }
 }

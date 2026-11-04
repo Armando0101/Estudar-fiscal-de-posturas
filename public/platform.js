@@ -6,6 +6,10 @@ const TF = {
   version: 0,
   queueTimer: null,
   pending: false,
+  inFlight: false,
+  applying: false,
+  syncSeq: 0,
+  dirty: new Set(),
   origin: "banco",
   dayId: null,
   subject: null,
@@ -15,6 +19,138 @@ const TF = {
 
 window.TF = TF;
 
+const TF_PAYLOAD_FROM_STORAGE = {
+  "tango-fiscal-done": "done",
+  "tango-fiscal-edital": "edital",
+  "tango-fiscal-answers": "answers",
+  "tango-fiscal-review": "review",
+  "tango-fiscal-simulados": "sims",
+  "tango-fiscal-caderno": "caderno",
+  "tango-fiscal-cards": "cards",
+  "tango-fiscal-qfilters": "qfilters",
+  "tango-fiscal-daycheck": "daycheck",
+  "tango-fiscal-notes": "notes",
+  "tango-fiscal-watched": "watched",
+  "tango-fiscal-attempts": "attempts",
+  "tango-fiscal-shuffle": "shuffle",
+  "tango-fiscal-qstate": "qstate",
+  "tango-fiscal-goals": "goals"
+};
+
+function tfPayloadKeyForStorage(k) {
+  if (typeof k === "string" && /^b-2026-11-\d{2}-\d$/.test(k)) return "blocks";
+  return TF_PAYLOAD_FROM_STORAGE[k] || null;
+}
+
+function tfMergeAnswers(remote, local) {
+  const out = Object.assign({}, remote && typeof remote === "object" ? remote : {});
+  const loc = local && typeof local === "object" ? local : {};
+  Object.keys(loc).forEach((id) => {
+    const r = out[id];
+    const l = loc[id];
+    if (!r) { out[id] = l; return; }
+    const rt = Number(r && r.at) || 0;
+    const lt = Number(l && l.at) || 0;
+    out[id] = lt >= rt ? l : r;
+  });
+  return out;
+}
+
+function tfMergeDict(remote, local) {
+  return Object.assign({}, remote && typeof remote === "object" ? remote : {}, local && typeof local === "object" ? local : {});
+}
+
+function tfMergeDaycheck(remote, local) {
+  const out = Object.assign({}, remote && typeof remote === "object" ? remote : {});
+  const loc = local && typeof local === "object" ? local : {};
+  Object.keys(loc).forEach((day) => {
+    out[day] = Object.assign({}, out[day] || {}, loc[day] || {});
+  });
+  return out;
+}
+
+function tfMergeCaderno(remote, local) {
+  const map = new Map();
+  (Array.isArray(remote) ? remote : []).forEach((x) => { if (x && x.id) map.set(x.id, x); });
+  (Array.isArray(local) ? local : []).forEach((x) => {
+    if (!x || !x.id) return;
+    const prev = map.get(x.id);
+    if (!prev) { map.set(x.id, x); return; }
+    const newer = (Number(x.last) || 0) >= (Number(prev.last) || 0) ? x : prev;
+    const copy = Object.assign({}, newer);
+    copy.misses = Math.max(Number(prev.misses) || 0, Number(x.misses) || 0);
+    map.set(x.id, copy);
+  });
+  return Array.from(map.values());
+}
+
+function tfMergeSims(remote, local) {
+  const map = new Map();
+  (Array.isArray(remote) ? remote : []).forEach((x, i) => { map.set((x && (x.id || x.when)) || ("r" + i), x); });
+  (Array.isArray(local) ? local : []).forEach((x, i) => { map.set((x && (x.id || x.when)) || ("l" + i), x); });
+  return Array.from(map.values());
+}
+
+function tfMergeAttempts(remote, local) {
+  const parse = (v) => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === "string") { try { return JSON.parse(v); } catch { return []; } }
+    return [];
+  };
+  const rem = parse(remote);
+  const loc = parse(local);
+  const seen = new Set();
+  const out = [];
+  loc.concat(rem).forEach((row) => {
+    const id = row && (row.at + ":" + (row.qid || row.questionId || "") + ":" + (row.choiceId || ""));
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(row);
+  });
+  return out.slice(0, 2000);
+}
+
+const TF_MERGE = {
+  answers: tfMergeAnswers,
+  review: tfMergeDict,
+  cards: tfMergeDict,
+  done: tfMergeDict,
+  notes: tfMergeDict,
+  watched: tfMergeDict,
+  edital: tfMergeDict,
+  daycheck: tfMergeDaycheck,
+  blocks: tfMergeDict,
+  shuffle: tfMergeDict,
+  qstate: tfMergeDict,
+  goals: tfMergeDict,
+  caderno: tfMergeCaderno,
+  sims: tfMergeSims,
+  attempts: tfMergeAttempts
+};
+
+function tfMergePreferLocal(remote, local, dirtyKeys) {
+  const rem = remote && typeof remote === "object" ? remote : {};
+  const loc = local && typeof local === "object" ? local : {};
+  const dirty = dirtyKeys instanceof Set ? dirtyKeys : new Set(dirtyKeys || []);
+  const out = Object.assign({}, rem);
+  const keys = new Set(Object.keys(rem).concat(Object.keys(loc)));
+  keys.forEach((k) => {
+    if (k === "v" || k === "when" || k === "clientSeq") {
+      out[k] = loc[k] != null ? loc[k] : rem[k];
+      return;
+    }
+    const isDirty = dirty.has(k) || (dirty.size === 0 && loc[k] !== undefined);
+    if (!isDirty) {
+      out[k] = rem[k] !== undefined ? rem[k] : loc[k];
+      return;
+    }
+    const fn = TF_MERGE[k];
+    if (fn) out[k] = fn(rem[k], loc[k]);
+    else out[k] = loc[k] !== undefined ? loc[k] : rem[k];
+  });
+  return out;
+}
+
 function tfLSGet(k) {
   if (typeof lsGet === "function") return lsGet(k);
   try { return window.localStorage.getItem(k); } catch { return null; }
@@ -22,7 +158,16 @@ function tfLSGet(k) {
 function tfLSSet(k, v) {
   if (typeof lsSet === "function") { lsSet(k, v); return; }
   try { window.localStorage.setItem(k, v); } catch {}
-  if (TF.user) tfScheduleSync();
+  if (TF.user && !TF.applying) {
+    tfMarkDirty(k);
+    tfScheduleSync();
+  }
+}
+
+function tfMarkDirty(storageKey) {
+  const pk = tfPayloadKeyForStorage(storageKey);
+  if (pk) TF.dirty.add(pk);
+  TF.syncSeq += 1;
 }
 
 function tfSetSync(state, label) {
@@ -41,7 +186,12 @@ function tfCollect() {
 
 function tfApply(data) {
   if (!data) return;
-  if (typeof applyBackup === "function") applyBackup(data);
+  TF.applying = true;
+  try {
+    if (typeof applyBackup === "function") applyBackup(data);
+  } finally {
+    TF.applying = false;
+  }
 }
 
 async function tfApi(path, opts) {
@@ -63,7 +213,7 @@ async function tfApi(path, opts) {
 }
 
 function tfScheduleSync() {
-  if (!TF.user) return;
+  if (!TF.user || TF.applying) return;
   TF.pending = true;
   tfSetSync("pending", "Sincronizando...");
   if (TF.queueTimer) clearTimeout(TF.queueTimer);
@@ -72,32 +222,69 @@ function tfScheduleSync() {
 
 async function tfFlushSync() {
   if (!TF.user) return;
+  if (TF.inFlight) {
+    TF.pending = true;
+    return;
+  }
   if (!navigator.onLine) {
     tfSetSync("offline", "Sem internet: alterações salvas localmente.");
     return;
   }
-  TF.pending = false;
+  TF.inFlight = true;
+  const sentSeq = TF.syncSeq;
   try {
     tfSetSync("pending", "Sincronizando...");
     const payload = tfCollect();
+    payload.clientSeq = sentSeq;
     const out = await tfApi("/api/sync", { method: "PUT", body: { payload, version: TF.version } });
     TF.version = out.version || TF.version;
+    if (TF.syncSeq !== sentSeq) {
+      TF.inFlight = false;
+      tfScheduleSync();
+      return;
+    }
+    TF.dirty.clear();
+    TF.pending = false;
     tfSetSync("ok", "Salvo na nuvem.");
   } catch (err) {
     if (err.status === 409) {
       try {
         const remote = await tfApi("/api/sync");
-        if (remote.payload) tfApply(remote.payload);
+        const local = tfCollect();
+        const seqAtCollect = TF.syncSeq;
+        const merged = tfMergePreferLocal(remote.payload, local, TF.dirty);
         TF.version = remote.version || TF.version;
+        if (TF.syncSeq !== seqAtCollect) {
+          TF.inFlight = false;
+          tfScheduleSync();
+          return;
+        }
+        tfApply(merged);
+        if (TF.syncSeq !== seqAtCollect) {
+          TF.inFlight = false;
+          tfScheduleSync();
+          return;
+        }
+        const out = await tfApi("/api/sync", { method: "PUT", body: { payload: merged, version: TF.version } });
+        TF.version = out.version || TF.version;
+        if (TF.syncSeq !== sentSeq) {
+          TF.inFlight = false;
+          tfScheduleSync();
+          return;
+        }
+        TF.dirty.clear();
+        TF.pending = false;
         tfSetSync("ok", "Salvo na nuvem.");
       } catch {
         tfSetSync("fail", "Falha de sincronização: tentando novamente.");
-        setTimeout(tfFlushSync, 4000);
+        setTimeout(() => { if (!TF.inFlight) tfFlushSync(); }, 4000);
       }
-      return;
+    } else {
+      tfSetSync("fail", "Falha de sincronização: tentando novamente.");
+      setTimeout(() => { if (!TF.inFlight) tfFlushSync(); }, 4000);
     }
-    tfSetSync("fail", "Falha de sincronização: tentando novamente.");
-    setTimeout(tfFlushSync, 4000);
+  } finally {
+    TF.inFlight = false;
   }
 }
 
@@ -365,8 +552,15 @@ async function tfAfterLogin() {
   try {
     const remote = await tfApi("/api/sync");
     TF.version = remote.version || 0;
-    if (remote.payload) tfApply(remote.payload);
-    else tfOfferMigration(remote.migrated);
+    if (remote.payload) {
+      const local = tfCollect();
+      if (TF.dirty.size) {
+        tfApply(tfMergePreferLocal(remote.payload, local, TF.dirty));
+        tfScheduleSync();
+      } else {
+        tfApply(remote.payload);
+      }
+    } else tfOfferMigration(remote.migrated);
   } catch {
     tfSetSync("fail", "Falha de sincronização: tentando novamente.");
   }
@@ -625,9 +819,11 @@ async function renderRanking() {
 
 window.tfScheduleSync = tfScheduleSync;
 window.tfFlushSync = tfFlushSync;
+window.tfMarkDirty = tfMarkDirty;
+window.tfMergePreferLocal = tfMergePreferLocal;
 window.TFPlatform = {
   TF, tfApi, tfOrderFor, tfPresent, tfRecordAttempt, tfOriginStats,
-  tfScheduleSync, tfFlushSync, tfSetSync,
+  tfScheduleSync, tfFlushSync, tfSetSync, tfMarkDirty, tfMergePreferLocal,
   renderPerfil, renderRanking, tfShowGate, tfSetOrigin: function (o, dayId) {
     TF.origin = o || "banco";
     TF.dayId = dayId || null;
@@ -647,8 +843,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       tfPaintChrome();
       const remote = await tfApi("/api/sync");
       TF.version = remote.version || 0;
-      if (remote.payload) tfApply(remote.payload);
-      else tfOfferMigration(remote.migrated);
+      if (remote.payload) {
+        const local = tfCollect();
+        if (TF.dirty.size) {
+          tfApply(tfMergePreferLocal(remote.payload, local, TF.dirty));
+          tfScheduleSync();
+        } else {
+          tfApply(remote.payload);
+        }
+      } else tfOfferMigration(remote.migrated);
       tfSetSync("ok", "Salvo na nuvem.");
     } else {
       tfPaintChrome();

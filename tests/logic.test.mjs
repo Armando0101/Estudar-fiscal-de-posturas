@@ -21,6 +21,7 @@ import {
   computeStreak,
   SYNC_KEYS
 } from "../src/schedule.mjs";
+import { mergePreferLocal, isStaleResponse, payloadKeyForStorage } from "../src/sync-merge.mjs";
 
 test("banco: 21 dias no cronograma e prova em 22/11", () => {
   const ids = Object.keys(SCHEDULE);
@@ -178,9 +179,9 @@ test("bindQuestionCard não sombreia rec no confirm (evita TDZ)", () => {
   assert.match(fn, /next\[q\.id\] = resultRec/);
   assert.match(fn, /addToCaderno\(q, resultRec\.choice\)/);
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /app\.js\?v=20261104c/);
+  assert.match(html, /app\.js\?v=20261104d/);
   const pubHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
-  assert.match(pubHtml, /app\.js\?v=20261104c/);
+  assert.match(pubHtml, /app\.js\?v=20261104d/);
   const pubSrc = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   assert.equal(pubSrc.includes("let rec = { choice: qPick"), false);
   assert.equal(pubSrc.includes("let resultRec = { choice: qPick"), true);
@@ -280,4 +281,49 @@ test("ranking ordena por sequência, recorde e dias — nunca por acerto", () =>
   ];
   rows.sort((a, b) => b.current - a.current || b.best - a.best || b.total - a.total);
   assert.deepEqual(rows.map((r) => r.nickname), ["Duda", "Cris", "Bia", "Ana"]);
+});
+
+test("merge 409: clique local mais novo não é revertido pelo payload remoto", () => {
+  const remote = {
+    v: 1,
+    daycheck: { "2026-11-04": { "st-s1": true, "st-s2": false } },
+    answers: { q01: { choice: 0, ok: false, at: 100 } },
+    done: { "2026-11-02": true }
+  };
+  const local = {
+    v: 1,
+    daycheck: { "2026-11-04": { "st-s1": true, "st-s2": true, "st-s3": true } },
+    answers: { q01: { choice: 1, ok: true, at: 200 } },
+    done: { "2026-11-02": true, "2026-11-04": true }
+  };
+  const merged = mergePreferLocal(remote, local, new Set(["daycheck", "answers", "done"]));
+  assert.equal(merged.daycheck["2026-11-04"]["st-s2"], true);
+  assert.equal(merged.daycheck["2026-11-04"]["st-s3"], true);
+  assert.equal(merged.answers.q01.ok, true);
+  assert.equal(merged.answers.q01.at, 200);
+  assert.equal(merged.done["2026-11-04"], true);
+});
+
+test("resposta antiga do servidor não aplica se o seq local avançou", () => {
+  assert.equal(isStaleResponse(3, 5), true);
+  assert.equal(isStaleResponse(5, 5), false);
+  assert.equal(isStaleResponse(7, 5), false);
+});
+
+test("chaves de storage mapeiam para campos do payload de sync", () => {
+  assert.equal(payloadKeyForStorage("tango-fiscal-daycheck"), "daycheck");
+  assert.equal(payloadKeyForStorage("tango-fiscal-answers"), "answers");
+  assert.equal(payloadKeyForStorage("b-2026-11-04-0"), "blocks");
+});
+
+test("platform.js não aplica GET /api/sync em conflito 409 sem merge", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const src = fs.readFileSync(path.join(root, "platform.js"), "utf8");
+  assert.match(src, /tfMergePreferLocal/);
+  assert.match(src, /TF\.dirty/);
+  assert.match(src, /sentSeq/);
+  assert.match(src, /TF\.applying/);
+  assert.equal(/err\.status === 409[\s\S]{0,220}tfApply\(remote\.payload\)/.test(src), false);
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(html, /platform\.js\?v=20261104d/);
 });
