@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plano Recalibrado — Fiscal de Posturas Tanguá</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600;700&display=swap" rel="stylesheet" />
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <script>
+    try {
+      var t = localStorage.getItem("tango-fiscal-theme");
+      if (t !== "dark" && t !== "light") {
+        t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+      }
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="styles.css?v=20261104b" />
+</head>
+<body>
+  <a class="skip-link" href="#conteudo">Ir ao conteúdo</a>
+  <header class="top">
+    <div class="brand">
+      <p class="kicker">Tanguá/RJ · Banca IBDO · 22/11/2026</p>
+      <h1>Fiscal de Posturas</h1>
+      <p class="sub">Código 101 · 2 vagas AC · ensino médio</p>
+    </div>
+    <div class="top-actions">
+      <div id="user-slot" class="user-slot"></div>
+      <button type="button" class="theme-btn" id="btn-theme" aria-pressed="false" aria-label="Ativar modo escuro">
+        <span class="theme-icon" aria-hidden="true"></span>
+        <span class="theme-label">Modo escuro</span>
+      </button>
+      <div class="countdown" id="countdown" aria-live="polite">
+        <div class="count-num" id="daysLeft">--</div>
+        <div class="count-label">dias até a prova</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="backup-bar">
+    <span id="sync-ind" data-state="guest">Visitante: progresso só neste navegador. Backup JSON continua como emergência.</span>
+    <div class="backup-actions">
+      <button type="button" id="btn-export">Exportar backup</button>
+      <label class="file-btn">Importar<input type="file" id="btn-import" accept="application/json" /></label>
+    </div>
+  </div>
+
+  <nav class="nav-main" aria-label="Seções principais">
+    <button type="button" class="nav-btn active" data-nav="hoje">Início</button>
+    <button type="button" class="nav-btn" data-nav="calendario">Cronograma</button>
+    <button type="button" class="nav-btn" data-nav="praticar">Praticar</button>
+    <button type="button" class="nav-btn" data-nav="simulados">Simulados</button>
+    <button type="button" class="nav-btn" data-nav="desempenho">Desempenho</button>
+    <button type="button" class="nav-btn" data-nav="conteudos">Conteúdos</button>
+    <div class="nav-more">
+      <button type="button" class="nav-btn" id="btn-mais" data-nav="mais" aria-expanded="false" aria-haspopup="true">Mais</button>
+      <div class="nav-more-menu" id="mais-menu" hidden>
+        <button type="button" data-go-panel="metodo">O que mudou</button>
+        <button type="button" data-go-panel="perfil">Meu perfil</button>
+        <button type="button" data-go-panel="ranking">Ranking</button>
+      </div>
+    </div>
+  </nav>
+  <nav class="subnav" id="sub-praticar" hidden aria-label="Praticar">
+    <button type="button" class="subtab active" data-sub="questoes">Questões</button>
+    <button type="button" class="subtab" data-sub="treino">Treino rápido</button>
+    <button type="button" class="subtab" data-sub="flashcards">Flashcards</button>
+  </nav>
+  <nav class="subnav" id="sub-desempenho" hidden aria-label="Desempenho">
+    <button type="button" class="subtab active" data-sub="pesos">Visão geral</button>
+    <button type="button" class="subtab" data-sub="caderno">Caderno de erros</button>
+    <button type="button" class="subtab" data-sub="revisoes">Revisões</button>
+  </nav>
+  <nav class="subnav" id="sub-conteudos" hidden aria-label="Conteúdos">
+    <button type="button" class="subtab active" data-sub="edital">Edital</button>
+    <button type="button" class="subtab" data-sub="cobertura">Cobertura</button>
+    <button type="button" class="subtab" data-sub="materiais">Materiais</button>
+    <button type="button" class="subtab" data-sub="prazos">Prazos Lei 946</button>
+  </nav>
+
+  <nav class="tabs tabs-legacy" id="tabs" aria-hidden="true">
+    <button class="tab active" data-panel="hoje" tabindex="-1">Início</button>
+    <button class="tab" data-panel="calendario" tabindex="-1">Cronograma</button>
+    <button class="tab" data-panel="questoes" tabindex="-1">Questões</button>
+    <button class="tab" data-panel="flashcards" tabindex="-1">Flashcards</button>
+    <button class="tab" data-panel="simulados" tabindex="-1">Simulados</button>
+    <button class="tab" data-panel="caderno" tabindex="-1">Caderno</button>
+    <button class="tab" data-panel="edital" tabindex="-1">Edital</button>
+    <button class="tab" data-panel="cobertura" tabindex="-1">Cobertura</button>
+    <button class="tab" data-panel="materiais" tabindex="-1">Materiais</button>
+    <button class="tab" data-panel="metodo" tabindex="-1">O que mudou</button>
+    <button class="tab" data-panel="pesos" tabindex="-1">Estatísticas</button>
+    <button class="tab" data-panel="prazos" tabindex="-1">Prazos Lei 946</button>
+    <button class="tab" data-panel="perfil" tabindex="-1">Perfil</button>
+    <button class="tab" data-panel="ranking" tabindex="-1">Ranking</button>
+  </nav>
+
+  <main id="conteudo">
+    <section id="hoje" class="panel active"></section>
+
+    <section id="calendario" class="panel">
+      <div class="section-head">
+        <h2>Cronograma</h2>
+        <p>Cada dia: data, disciplinas, atividades e progresso. Abra um dia para estudar só aquele conteúdo.</p>
+      </div>
+      <div class="filters">
+        <button class="chip active" data-filter="all">Tudo</button>
+        <button class="chip" data-filter="next">Próximos</button>
+        <button class="chip" data-filter="pending">Pendentes</button>
+        <button class="chip" data-filter="done">Concluídos</button>
+        <button class="chip" data-filter="work">Dias úteis</button>
+        <button class="chip" data-filter="free">Folgas</button>
+        <button class="chip" data-filter="simulado">Simulados</button>
+      </div>
+      <div id="cal-list" class="cal-list"></div>
+    </section>
+
+    <section id="dia" class="panel">
+      <div id="dia-box"></div>
+    </section>
+
+    <section id="questoes" class="panel">
+      <div class="section-head">
+        <h2>Banco de treino IBDO</h2>
+        <p>Questões de treino, 4 alternativas A–D. Não são oficiais da banca. Toda errada vai ao caderno.</p>
+      </div>
+      <div id="q-overview" class="q-overview"></div>
+      <div class="filters" id="q-filters"></div>
+      <div id="q-stats" class="q-stats"></div>
+      <p id="q-status" class="sr-status" role="status" aria-live="polite"></p>
+      <div id="q-box"><article class="card"><h3>Carregando o banco…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
+    </section>
+
+    <section id="flashcards" class="panel">
+      <div class="section-head">
+        <h2>Flashcards</h2>
+        <p>Cartões curtos para prazos, classificações e distinções. Recuperação ativa, não releitura. Não substitui o banco de questões.</p>
+      </div>
+      <div id="cards-box"></div>
+    </section>
+
+    <section id="simulados" class="panel">
+      <div class="section-head">
+        <h2>Simulados</h2>
+        <p>Dois ensaios no formato da prova: 30 questões, 3 horas, pesos 2 / 2 / 4. Treinos direcionados não repetem a prova oficial.</p>
+      </div>
+      <div id="sim-home"><article class="card"><h3>Carregando simulados…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
+      <div id="sim-run" hidden></div>
+    </section>
+
+    <section id="caderno" class="panel">
+      <div class="section-head">
+        <h2>Caderno de erros</h2>
+        <p>Revisão D+1, D+3 e D+7. Errar de novo sobe a prioridade.</p>
+      </div>
+      <div id="caderno-box"><article class="card"><h3>Carregando caderno…</h3><p>Se esta mensagem não sumir, force recarregar com Ctrl+Shift+R.</p></article></div>
+    </section>
+
+    <section id="edital" class="panel">
+      <div class="section-head">
+        <h2>Edital verticalizado · Anexo I e II</h2>
+        <p>Marque o que já estudou. Código de Posturas (Lei 657/2007) é complementar: não está no Anexo II.</p>
+      </div>
+      <div id="edital-tree"></div>
+      <details class="adv-filters">
+        <summary>Na prática: o trabalho do Fiscal de Posturas (Anexo I)</summary>
+        <article class="card" style="margin-top:12px;box-shadow:none">
+        <p>Texto do Anexo I. Não confundir atribuição com conteúdo programático.</p>
+        <ul class="practice">
+          <li><b>Licença comercial.</b> Estabelecimento funcionando sem licença: verificar regularidade do licenciamento da atividade, lavrar o que a chefia determinar, relatar irregularidade. Não é Fiscal de Tributos nem de Meio Ambiente.</li>
+          <li><b>Ambulante.</b> Impedir o comércio de quem não tenha a documentação exigida.</li>
+          <li><b>Banca / barraca.</b> Permissão do tipo de comércio e aspecto estético em logradouro público.</li>
+          <li><b>Feira livre.</b> Localização, instalação, horário e organização.</li>
+          <li><b>Publicidade.</b> Anúncios, alto-falantes, propaganda em muros, tapumes e vitrines.</li>
+          <li><b>Horário e farmácia.</b> Abertura/fechamento do comércio e escala de plantão das farmácias.</li>
+          <li><b>Inflamáveis.</b> Posturas de fabrico, manipulação e uso, além das indicações de segurança.</li>
+          <li><b>Apreensão.</b> Veículos, mercadorias, animais e objetos em ruas; guarda em depósito público; devolução após formalidades e multa.</li>
+          <li><b>Evento / circo.</b> Licença para festa em via pública; circo exige documento de responsabilidade de engenheiro habilitado.</li>
+          <li><b>Denúncia.</b> Sindicância especial para instruir processo; relatório periódico à chefia.</li>
+        </ul>
+      </article>
+      </details>
+      <details class="adv-filters">
+        <summary>Material complementar · Lei 657/2007</summary>
+        <article class="card warn" style="margin-top:12px;box-shadow:none">
+        <p>O Código de Posturas ajuda a entender a função, mas <b>não</b> é disciplina do Anexo II. Use só se sobrar tempo depois de Lei 946, LOM, atos, CF 1º–5º / 29–31 / 37–41 e informática.</p>
+        <p><a href="https://tangua.rj.gov.br/wp-content/uploads/2025/10/Lei-0657-2007.pdf" target="_blank" rel="noopener">PDF oficial · Lei 657/2007</a></p>
+      </article>
+      </details>
+    </section>
+
+    <section id="cobertura" class="panel">
+      <div class="section-head">
+        <h2>Cobertura do Edital</h2>
+        <p>Matriz Anexo II: material, questões, desempenho e prioridade. Prioridade altera o tempo, não a presença do tópico.</p>
+      </div>
+      <div id="cobertura-box"></div>
+    </section>
+
+    <section id="materiais" class="panel">
+      <div class="section-head">
+        <h2>Leis, vídeos e prova anterior</h2>
+        <p>Links oficiais e aulas específicas (não a home do curso). Vídeos conferidos em 02/11/2026.</p>
+      </div>
+      <div class="grid-3" id="mat-links">
+        <article class="card">
+          <h3>Fontes oficiais</h3>
+          <ul>
+            <li><a href="https://concursos.ibdoprojetos.org.br/informacoes/107" target="_blank" rel="noopener">Página do certame IBDO</a></li>
+            <li><a href="https://tangua.rj.gov.br/wp-content/uploads/2025/10/Lei-0946-2014.pdf" target="_blank" rel="noopener">Lei 946/2014 (PDF Tanguá)</a></li>
+            <li><a href="https://tangua.rj.gov.br/wp-content/uploads/2025/10/Lei-Organica-Municipal.pdf" target="_blank" rel="noopener">Lei Orgânica de Tanguá (PDF)</a></li>
+            <li><a href="https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm" target="_blank" rel="noopener">Constituição Federal</a></li>
+            <li><a href="https://www.planalto.gov.br/ccivil_03/leis/l8429.htm" target="_blank" rel="noopener">Lei 8.429 (improbidade)</a></li>
+            <li><a href="https://tangua.rj.gov.br/leis-municipais-e-decretos/" target="_blank" rel="noopener">Leis municipais de Tanguá</a></li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>IBDO · Paraibuna 2019</h3>
+          <ul>
+            <li><a href="https://www.eticaconcursos.com.br/provas/arquivos/prova/instituto-ibdo-projetos-2019-prefeitura-de-paraibuna-sp-fiscal-de-posturas-prova.pdf" target="_blank" rel="noopener">Prova Fiscal de Posturas</a></li>
+            <li><a href="https://www.eticaconcursos.com.br/provas/arquivos/gabarito/instituto-ibdo-projetos-2019-prefeitura-de-paraibuna-sp-fiscal-de-posturas-gabarito.pdf" target="_blank" rel="noopener">Gabarito</a></li>
+          </ul>
+          <p>Aquela prova tinha 5 alternativas. A de Tanguá tem 4. Legislação de Paraibuna não se estuda no lugar da de Tanguá.</p>
+        </article>
+        <article class="card">
+          <h3>Anexo III · datas úteis</h3>
+          <ul>
+            <li>09/11 · homologação das inscrições</li>
+            <li>17/11 · local de prova e mapa candidato × vaga</li>
+            <li>22/11 · prova objetiva em Tanguá · 3h</li>
+          </ul>
+        </article>
+      </div>
+      <div id="video-lib"></div>
+    </section>
+
+    <section id="metodo" class="panel">
+      <div class="section-head">
+        <h2>Por que o plano anterior te atrasava</h2>
+        <p>O cronograma do Gemini era denso demais para quem trabalha 8h e dorme às 22h. Ajuste cirúrgico abaixo.</p>
+      </div>
+      <div class="compare">
+        <article class="card bad">
+          <h3>Plano antigo</h3>
+          <ul>
+            <li>2h30 líquidas após o expediente, dois blocos de 1h10</li>
+            <li>7h a 8h no sábado, domingo e feriado</li>
+            <li>Teoria até 07/11, questões em massa só na semana 3</li>
+            <li>Constitucional federal pesado: Arts. 44–75 e 145–169 (TCU, PPA, LDO, LOA)</li>
+            <li>Português com fonologia, morfologia profunda e figuras</li>
+            <li>Informática (peso 4) relegada a blocos soltos</li>
+            <li>Meta de “devorar 70% do edital no feriadão”</li>
+          </ul>
+        </article>
+        <article class="card good">
+          <h3>Plano novo</h3>
+          <ul>
+            <li>2h00 no dia útil: 50 min + 50 min + 20 min de erros/prazos</li>
+            <li>5h30 no fim de semana e feriado, noite livre às 16h</li>
+            <li>Questões todos os dias, desde hoje. Teoria só do que errou</li>
+            <li>Constitucional no que o Anexo II pede, com prioridade em 1º–5º, Municípios e 37–41</li>
+            <li>Português: interpretação primeiro; o Anexo II pede também fonologia/fonética, dígrafos e figuras — entram como noções, sem noite inteira</li>
+            <li>Informática entra 3 vezes por semana até a prova</li>
+            <li>Caderno de erros e tabela de prazos com repetição espaçada</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="grid-3">
+        <article class="card">
+          <h3>Dia útil · 2h</h3>
+          <ol class="timeline">
+            <li><b>18:00–19:00</b> Chegada, banho, jantar. Sem tela de estudo.</li>
+            <li><b>19:00–19:50</b> Bloco A · matéria peso 4 ou lei seca.</li>
+            <li><b>19:50–20:00</b> Pausa. Água. Longe do celular.</li>
+            <li><b>20:00–20:50</b> Bloco B · segunda matéria ou questões.</li>
+            <li><b>20:50–21:10</b> Caderno de erros + 8 prazos da Lei 946.</li>
+            <li><b>21:10–22:00</b> Desligar. Dormir 22:00.</li>
+          </ol>
+        </article>
+        <article class="card">
+          <h3>Folga · 5h30</h3>
+          <ol class="timeline">
+            <li><b>07:30–09:30</b> Específicas (mente fresca, peso 4).</li>
+            <li><b>09:30–10:00</b> Intervalo.</li>
+            <li><b>10:00–12:00</b> Legislação municipal (lei grifada + questões).</li>
+            <li><b>12:00–14:00</b> Almoço. Cochilo de no máximo 25 min.</li>
+            <li><b>14:00–16:00</b> Português ou simulado + correção.</li>
+            <li><b>16:00 em diante</b> Noite livre. Dormir 22:00.</li>
+          </ol>
+        </article>
+        <article class="card">
+          <h3>Regra de ouro da sessão</h3>
+          <ul>
+            <li>30–40% do bloco em lei seca ou resumo.</li>
+            <li>60–70% em questões (4 alternativas A–D, banco de treino).</li>
+            <li>Toda questão errada vai para o caderno de erros no mesmo dia.</li>
+            <li>Não releia o caderno inteiro: só o que errou nas últimas 48h + prazos.</li>
+            <li>Trajeto: 15 min de artigos grifados da Lei 946 no celular, se der.</li>
+          </ul>
+        </article>
+      </div>
+
+      <article class="card warn">
+        <h3>O que o Anexo II pede (não foi cortado)</h3>
+        <p>Texto do Anexo II, cargos de ensino médio, Fiscal de Posturas (páginas 42–43 do Edital 01/2026). <b>Fonologia/fonética</b> (letra/fonema, encontros vocálicos e consonantais, dígrafos) e <b>figuras de linguagem</b> estão no programa de Português. <b>Organização dos poderes, fiscalização contábil, financeira e orçamentária, tributação, orçamento e finanças públicas</b> estão no programa de específicas, como <b>noções</b>.</p>
+        <p>O que muda é a profundidade: não estudar TCU, processo legislativo federal ou PPA/LDO/LOA como se fosse prova de Tribunal de Contas ou de Agente de Controle Interno (esse cargo, no mesmo Anexo II, tem PPA, LDO, LOA, LRF e Lei 4.320; o de Fiscal não). Lei 657/2007 continua complementar: não está no Anexo II.</p>
+      </article>
+    </section>
+
+    <section id="pesos" class="panel">
+      <div class="section-head">
+        <h2>Onde está a vaga</h2>
+        <p>30 questões · 3 horas · 4 alternativas · mínimo 40 pontos · meta 68–72. Desempate: preferência legal (≥60 anos); depois específicas, português, legislação e maior idade.</p>
+      </div>
+      <div id="stats-live"></div>
+      <div class="bars">
+        <div class="bar-row">
+          <div class="bar-meta"><span>Conhecimentos Específicos</span><b>40 pts</b></div>
+          <div class="bar"><i style="width:50%"></i></div>
+          <p>10 questões × peso 4. Admin, Constitucional (noções), Ética, Informática, Atribuições. Após a preferência legal (≥60 anos), é o 1º critério de desempate por nota.</p>
+        </div>
+        <div class="bar-row">
+          <div class="bar-meta"><span>Língua Portuguesa</span><b>20 pts</b></div>
+          <div class="bar"><i style="width:25%"></i></div>
+          <p>10 questões × peso 2. Interpretação decide. O Anexo II também cobra fonologia/fonética, morfologia, sintaxe (crase, concordância, regência), semântica e figuras. 2º critério de desempate por nota, depois da preferência legal.</p>
+        </div>
+        <div class="bar-row">
+          <div class="bar-meta"><span>Legislação Municipal</span><b>20 pts</b></div>
+          <div class="bar"><i style="width:25%"></i></div>
+          <p>10 questões × peso 2. Lei 946/2014 e Lei Orgânica de Tanguá. Prazos, competências, vedações, quóruns. 3º critério de desempate por nota; persistindo, maior idade.</p>
+        </div>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <h3>Estudar todo dia</h3>
+          <ul>
+            <li>Atos administrativos (elementos, atributos, classificação)</li>
+            <li>Art. 37 e servidores (CF 37–41)</li>
+            <li>Atribuições do cargo (Anexo I)</li>
+            <li>Prazos da Lei 946</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Estudar 3× por semana</h3>
+          <ul>
+            <li>Informática (atalhos, segurança, hardware)</li>
+            <li>Interpretação de texto</li>
+            <li>Lei Orgânica (competências e Executivo)</li>
+            <li>Improbidade e bens públicos</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Não gastar noite nisso</h3>
+          <ul>
+            <li>Código de Obras / Código Tributário (não estão no Anexo II deste cargo)</li>
+            <li>Processo legislativo federal em profundidade de procurador</li>
+            <li>PPA, LDO, LOA, LRF e Lei 4.320 como se fosse Agente de Controle Interno</li>
+            <li>Lei 657/2007 como se fosse disciplina do Anexo II (é complementar)</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="section-head" style="margin-top:28px">
+        <h2>Raio-X da banca IBDO</h2>
+        <p>Levantamento real, sem estatística inventada. Uma prova de Fiscal de Posturas localizada e lida no estilo (Paraibuna/SP 2019). O PDF é escaneado; o conteúdo abaixo vem do briefing e da estrutura visível, não de extração OCR completa.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <h3>O que foi encontrado</h3>
+          <ul>
+            <li>1 prova de Fiscal de Posturas: Paraibuna/SP 2019, Instituto IBDO Projetos.</li>
+            <li>Aquela prova usava 5 alternativas. Tanguá usa 4 (A–D).</li>
+            <li>Assuntos observados no briefing: interpretação, regência, ortografia, formação de palavras, legislação municipal, princípios, atos, improbidade, Poder Legislativo, informática.</li>
+            <li>Formatos citados: CORRETO / INCORRETO / EXCETO / NÃO e afirmações I–IV.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Como treinar o estilo</h3>
+          <ul>
+            <li>Leia o enunciado até o fim: EXCETO e NÃO invertem a resposta.</li>
+            <li>Em I–IV, marque cada item verdadeiro/falso antes de olhar as combinações.</li>
+            <li>Legislação: cobra prazo, conceito e “o que NÃO é”. Não misture Lei 946 com estatuto de outro município.</li>
+            <li>Informática: conceito + atalho + segurança, sem recurso avançado de Excel.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>O que não afirmar</h3>
+          <ul>
+            <li>Não há base para dizer “70% da prova é atos”. Só 1 prova de cargo equivalente foi localizada aqui.</li>
+            <li>Não use o gabarito de Paraibuna como se fosse Tanguá.</li>
+            <li>Nível: banca de município, ensino médio, enunciado direto com pegadinha de NÃO/EXCETO.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="prazos" class="panel">
+      <div class="section-head">
+        <h2>Tabela de prazos — Lei 946/2014</h2>
+        <p>Números reconferidos em 02/11/2026 no PDF da Prefeitura (Lei 946/2014, 62 páginas). Revise 8 linhas por noite no bloco das 20:50. Não inventei artigo.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Instituto</th>
+              <th>Prazo</th>
+              <th>Se perder / detalhe</th>
+              <th>Artigo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Validade do concurso</td>
+              <td>Até 2 anos da homologação, prorrogável 1 vez por igual período</td>
+              <td>—</td>
+              <td>Art. 14, parágrafo único</td>
+            </tr>
+            <tr>
+              <td>Posse</td>
+              <td>30 dias da publicação da nomeação, prorrogável por igual período</td>
+              <td>Nomeação tornada sem efeito</td>
+              <td>Art. 35 e §4º</td>
+            </tr>
+            <tr>
+              <td>Exercício</td>
+              <td>15 dias da posse, prorrogável por igual período</td>
+              <td>Exoneração de ofício</td>
+              <td>Arts. 36 e 50, II</td>
+            </tr>
+            <tr>
+              <td>Investidura</td>
+              <td>Ocorre com a posse e se completa com o exercício</td>
+              <td>Só há posse na nomeação</td>
+              <td>Art. 13, §2º e Art. 35, §3º</td>
+            </tr>
+            <tr>
+              <td>Estágio / estabilidade</td>
+              <td>3 anos a contar do exercício</td>
+              <td>Exoneração se avaliação insuficiente</td>
+              <td>Arts. 39, 45 e 47</td>
+            </tr>
+            <tr>
+              <td>Recondução a pedido</td>
+              <td>120 dias da nomeação no novo cargo do quadro de Tanguá</td>
+              <td>Perde o direito de voltar</td>
+              <td>Art. 26, III e Art. 49, parágrafo único</td>
+            </tr>
+            <tr>
+              <td>Reversão no interesse da Administração</td>
+              <td>Aposentadoria voluntária nos 5 anos anteriores + cargo vago + estabilidade</td>
+              <td>Vedada se o aposentado já completou 70 anos</td>
+              <td>Art. 28, II e §6º</td>
+            </tr>
+            <tr>
+              <td>Sindicância</td>
+              <td>30 dias, prorrogável por igual período</td>
+              <td>Pode arquivar, advertir, suspender até 30 dias ou instaurar PAD</td>
+              <td>Art. 231</td>
+            </tr>
+            <tr>
+              <td>PAD (rito ordinário)</td>
+              <td>60 dias da publicação da comissão, prorrogável por igual prazo</td>
+              <td>Comissão de 3 servidores efetivos</td>
+              <td>Arts. 239 e 242</td>
+            </tr>
+            <tr>
+              <td>Afastamento preventivo</td>
+              <td>Até 30 dias, prorrogável por igual prazo, sem prejuízo da remuneração</td>
+              <td>Cessa mesmo se o processo não acabou</td>
+              <td>Art. 237</td>
+            </tr>
+            <tr>
+              <td>Abandono de cargo</td>
+              <td>Ausência intencional por mais de 30 dias consecutivos</td>
+              <td>Rito sumário</td>
+              <td>Art. 232, I</td>
+            </tr>
+            <tr>
+              <td>Inassiduidade habitual</td>
+              <td>60 dias interpolados, sem causa, em 12 meses</td>
+              <td>Rito sumário</td>
+              <td>Art. 232, II</td>
+            </tr>
+            <tr>
+              <td>Prescrição disciplinar</td>
+              <td>5 anos (demissão/cassação/destituição); 2 anos (suspensão); 180 dias (advertência)</td>
+              <td>Conta da ciência do fato; sindicância/PAD interrompem</td>
+              <td>Art. 271</td>
+            </tr>
+            <tr>
+              <td>Recurso (petição)</td>
+              <td>15 dias da ciência da decisão</td>
+              <td>Prescrição de 5 anos (demissão) ou 2 anos (demais)</td>
+              <td>Arts. 198 e 199</td>
+            </tr>
+            <tr>
+              <td>Casamento / falecimento</td>
+              <td>8 dias cada, sem perda de remuneração</td>
+              <td>Comprovar em 48 horas</td>
+              <td>Art. 176, V e VI</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <article class="card">
+        <h3>7 formas de provimento · Art. 20</h3>
+        <p>Nomeação · Recondução · Reintegração · Reversão · Aproveitamento · Promoção · Readaptação.</p>
+        <p>Parágrafo único do Art. 20: cargo em comissão também se prove por nomeação. Art. 35, §3º: só há posse nos casos de nomeação. Readaptação é forma de provimento (Art. 20, VII) e de vacância (Art. 49, III). Exoneração não está no Art. 217 (penalidades). Demissão está.</p>
+      </article>
+      <article class="card">
+        <h3>Vacância · Art. 49</h3>
+        <p>Exoneração (a pedido ou de ofício) · Demissão · Readaptação · Aposentadoria · Falecimento · Posse em outro cargo inacumulável.</p>
+      </article>
+    </section>
+
+    <section id="perfil" class="panel">
+      <div class="section-head">
+        <h2>Meu perfil</h2>
+        <p>Conta, sequência e desempenho por origem. O ranking usa checklists; não comprova atenção real.</p>
+      </div>
+      <div id="perfil-box"></div>
+    </section>
+
+    <section id="ranking" class="panel">
+      <div class="section-head">
+        <h2>Ranking de estudos</h2>
+        <p>Grupos privados. Ordenação: sequência atual, recorde, dias concluídos. Sem percentual de acertos.</p>
+      </div>
+      <div id="ranking-box"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Meta: 68–72 pontos. Sono 22h–06h intocável. Prova 22/11 · documento físico original + caneta transparente azul ou preta. Questões deste site são de treino, não oficiais.</p>
+  </footer>
+
+  <script>
+    window.onerror = function (msg) {
+      var box = document.getElementById("q-box") || document.getElementById("sim-home") || document.body;
+      if (box && !document.getElementById("js-fail")) {
+        box.insertAdjacentHTML("afterbegin", "<article class='card warn' id='js-fail'><h3>Erro de script</h3><p>" + String(msg) + "</p></article>");
+      }
+    };
+  </script>
+  <div id="q-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="q-modal-title">
+      <h3 id="q-modal-title">Confirmação</h3>
+      <p id="q-modal-body"></p>
+      <div class="q-nav">
+        <button type="button" class="btn" id="q-modal-cancel">Cancelar</button>
+        <button type="button" class="btn wipe" id="q-modal-ok">Confirmar redefinição</button>
+      </div>
+    </div>
+  </div>
+  <div id="auth-gate" class="auth-gate" hidden></div>
+  <script src="app.js?v=20261104b"></script>
+  <script src="dia.js?v=20261104b"></script>
+  <script src="platform.js?v=20261104b"></script>
+</body>
+</html>
