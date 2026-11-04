@@ -1,0 +1,11 @@
+node_modules
+data
+.git
+tests
+_audit_*.js
+_ui_test.js
+*.sqlite
+.dev.vars
+SETUP.md
+AUDITORIA-IBDO-2019.md
+package-lock.json
