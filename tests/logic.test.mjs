@@ -163,6 +163,114 @@ test("public/ publica só o frontend, com caminhos relativos", () => {
   assert.match(css, /z-index: 30;/);
 });
 
+test("bindQuestionCard não sombreia rec no confirm (evita TDZ)", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const src = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const start = src.indexOf("function bindQuestionCard(box, q, rec)");
+  assert.ok(start >= 0);
+  const end = src.indexOf("\nfunction ", start + 1);
+  const fn = src.slice(start, end > start ? end : undefined);
+  assert.match(fn, /presentedChoices\(q, rec\)/);
+  assert.match(fn, /let resultRec = \{ choice: qPick/);
+  assert.equal(/\blet rec\b/.test(fn), false);
+  assert.match(fn, /Object\.assign\(resultRec, window\.TFPlatform\.tfRecordAttempt/);
+  assert.match(fn, /drill\.picks\[q\.id\] = resultRec/);
+  assert.match(fn, /next\[q\.id\] = resultRec/);
+  assert.match(fn, /addToCaderno\(q, resultRec\.choice\)/);
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(html, /app\.js\?v=20261104c/);
+  const pubHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+  assert.match(pubHtml, /app\.js\?v=20261104c/);
+  const pubSrc = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+  assert.equal(pubSrc.includes("let rec = { choice: qPick"), false);
+  assert.equal(pubSrc.includes("let resultRec = { choice: qPick"), true);
+});
+
+function confirmQuestionPick({ q, rec, qPick, wantDrill, drill, answers, caderno, tfRecordAttempt, origin }) {
+  const presented = (rec && Array.isArray(rec.order) ? rec.order : ["c0", "c1", "c2", "c3"]).map((cid, i) => ({
+    letter: "ABCD"[i],
+    originalIndex: Number(String(cid).replace(/^c/, ""))
+  }));
+  const presentedIndex = presented.findIndex((p) => p.originalIndex === qPick);
+  const usedOrigin = origin || (wantDrill ? "treino_rapido" : "banco");
+  let resultRec = { choice: qPick, ok: qPick === q.answer, at: Date.now(), origin: usedOrigin };
+  if (typeof tfRecordAttempt === "function") {
+    resultRec = Object.assign(resultRec, tfRecordAttempt(q, presentedIndex < 0 ? 0 : presentedIndex, usedOrigin));
+  }
+  if (wantDrill && drill) {
+    drill.picks[q.id] = resultRec;
+    return { resultRec, answers, caderno, feedback: resultRec.ok ? "Certo." : "Errado." };
+  }
+  answers[q.id] = resultRec;
+  if (!resultRec.ok) caderno.push({ id: q.id, choice: resultRec.choice });
+  const done = Object.keys(answers).length;
+  const okN = Object.values(answers).filter((a) => a.ok).length;
+  return {
+    resultRec,
+    answers,
+    caderno,
+    feedback: resultRec.ok ? "Certo." : "Errado.",
+    stats: { done, ok: okN, pct: done ? Math.round((100 * okN) / done) : 0 }
+  };
+}
+
+test("responder certo e errado atualiza gabarito, caderno e estatísticas", () => {
+  const qOk = { id: "q01", answer: 1 };
+  const qBad = { id: "q02", answer: 2 };
+  const answers = {};
+  const caderno = [];
+  const attempts = [];
+  const rec = { order: ["c1", "c0", "c2", "c3"] };
+  const tfRecordAttempt = (q, presentedIndex, origin) => {
+    const order = rec.order;
+    const cid = order[presentedIndex];
+    const original = Number(cid.slice(1));
+    const row = { choice: original, choiceId: cid, ok: original === q.answer, origin, order: order.slice() };
+    attempts.push({ qid: q.id, origin, ok: row.ok });
+    return row;
+  };
+  const good = confirmQuestionPick({ q: qOk, rec, qPick: 1, answers, caderno, tfRecordAttempt, origin: "banco" });
+  assert.equal(good.feedback, "Certo.");
+  assert.equal(good.resultRec.ok, true);
+  assert.equal(good.answers.q01.ok, true);
+  assert.equal(caderno.length, 0);
+  assert.equal(good.stats.done, 1);
+  assert.equal(good.stats.pct, 100);
+  const bad = confirmQuestionPick({ q: qBad, rec, qPick: 0, answers, caderno, tfRecordAttempt, origin: "banco" });
+  assert.equal(bad.feedback, "Errado.");
+  assert.equal(bad.resultRec.ok, false);
+  assert.equal(bad.answers.q02.choice, 0);
+  assert.equal(caderno.length, 1);
+  assert.equal(caderno[0].id, "q02");
+  assert.equal(bad.stats.done, 2);
+  assert.equal(bad.stats.ok, 1);
+  assert.equal(attempts.map((a) => a.origin).join(","), "banco,banco");
+});
+
+test("treino rápido e redefinir marcações preservam caderno", () => {
+  const q = { id: "q10", answer: 3 };
+  const answers = {};
+  const caderno = [];
+  const drill = { picks: {} };
+  const rec = { order: ["c0", "c1", "c2", "c3"] };
+  const drillHit = confirmQuestionPick({
+    q, rec, qPick: 1, wantDrill: true, drill, answers, caderno, origin: "treino_rapido"
+  });
+  assert.equal(drillHit.feedback, "Errado.");
+  assert.equal(drill.picks.q10.origin, "treino_rapido");
+  assert.equal(Object.keys(answers).length, 0);
+  assert.equal(caderno.length, 0);
+  confirmQuestionPick({ q, rec, qPick: 0, answers, caderno, origin: "banco" });
+  assert.equal(caderno.length, 1);
+  const reset = {};
+  assert.equal(Object.keys(reset).length, 0);
+  assert.equal(caderno.length, 1);
+  const again = confirmQuestionPick({ q: { id: "q11", answer: 0 }, rec, qPick: 0, answers: reset, caderno, origin: "banco" });
+  assert.equal(again.resultRec.ok, true);
+  assert.equal(again.stats.done, 1);
+  assert.equal(caderno.length, 1);
+});
+
 test("ranking ordena por sequência, recorde e dias — nunca por acerto", () => {
   const rows = [
     { nickname: "Ana", current: 2, best: 5, total: 10, pct: 99 },

@@ -1855,20 +1855,20 @@ function bindQuestionCard(box, q, rec) {
       const presented = presentedChoices(q, rec);
       const presentedIndex = presented.findIndex((p) => p.originalIndex === qPick);
       const origin = currentAttemptOrigin();
-      let rec = { choice: qPick, ok: qPick === q.answer, at: Date.now(), origin };
+      let resultRec = { choice: qPick, ok: qPick === q.answer, at: Date.now(), origin };
       if (window.TFPlatform && typeof window.TFPlatform.tfRecordAttempt === "function") {
-        rec = Object.assign(rec, window.TFPlatform.tfRecordAttempt(q, presentedIndex < 0 ? 0 : presentedIndex, origin));
+        resultRec = Object.assign(resultRec, window.TFPlatform.tfRecordAttempt(q, presentedIndex < 0 ? 0 : presentedIndex, origin));
       }
       if (wantDrill && drill) {
-        drill.picks[q.id] = rec;
+        drill.picks[q.id] = resultRec;
         qPick = null;
         renderQuestoes();
         return;
       }
       const next = loadAnswers();
-      next[q.id] = rec;
+      next[q.id] = resultRec;
       saveAnswers(next);
-      if (!rec.ok && typeof addToCaderno === "function") addToCaderno(q, rec.choice);
+      if (!resultRec.ok && typeof addToCaderno === "function") addToCaderno(q, resultRec.choice);
       qPick = null;
       renderQuestoes();
       if (typeof renderCaderno === "function") renderCaderno();
