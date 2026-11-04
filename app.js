@@ -302,11 +302,22 @@ const DAYS = [
 
 const doneKey = "tango-fiscal-done";
 const themeKey = "tango-fiscal-theme";
+function storageKey(k) {
+  if (k === themeKey) return k;
+  try {
+    const u = window.TF && window.TF.user;
+    if (u && u.id) return "tfu-" + u.id + ":" + k;
+  } catch (_) {}
+  return k;
+}
 function lsGet(k) {
-  try { return window.localStorage.getItem(k); } catch { return null; }
+  try { return window.localStorage.getItem(storageKey(k)); } catch { return null; }
 }
 function lsSet(k, v) {
-  try { window.localStorage.setItem(k, v); } catch {}
+  try { window.localStorage.setItem(storageKey(k), v); } catch {}
+  if (k !== themeKey && window.TF && window.TF.user && typeof window.tfScheduleSync === "function") {
+    window.tfScheduleSync();
+  }
 }
 function osThemePref() {
   try {
@@ -394,6 +405,7 @@ function panelGroup(name) {
   if (name === "questoes" || name === "flashcards") return "praticar";
   if (name === "caderno" || name === "pesos") return "desempenho";
   if (name === "edital" || name === "cobertura" || name === "materiais" || name === "prazos") return "conteudos";
+  if (name === "perfil" || name === "ranking") return name;
   return name;
 }
 
@@ -448,6 +460,8 @@ document.querySelectorAll(".tab").forEach((btn) => {
       if (btn.dataset.panel === "edital" && typeof renderEdital === "function") renderEdital();
       if (btn.dataset.panel === "cobertura" && typeof renderCobertura === "function") renderCobertura();
       if (btn.dataset.panel === "pesos" && typeof renderStatsLive === "function") renderStatsLive();
+      if (btn.dataset.panel === "perfil" && window.TFPlatform && typeof window.TFPlatform.renderPerfil === "function") window.TFPlatform.renderPerfil();
+      if (btn.dataset.panel === "ranking" && window.TFPlatform && typeof window.TFPlatform.renderRanking === "function") window.TFPlatform.renderRanking();
     } catch (err) {
       const panel = document.getElementById(btn.dataset.panel);
       if (panel) {
@@ -470,7 +484,12 @@ document.querySelectorAll(".nav-btn[data-nav]").forEach((btn) => {
     }
     wantDrill = false;
     qPick = null;
-    if (n === "praticar") { uiPraticar = "questoes"; goPanel("questoes"); return; }
+    if (n === "praticar") {
+      uiPraticar = "questoes";
+      if (window.TFPlatform) window.TFPlatform.tfSetOrigin("banco");
+      goPanel("questoes");
+      return;
+    }
     if (n === "desempenho") { uiDesempenho = "pesos"; goPanel("pesos"); return; }
     if (n === "conteudos") { uiConteudos = "edital"; goPanel("edital"); return; }
     goPanel(n);
@@ -1324,6 +1343,10 @@ function resetQuestionMarks() {
   saveAnswers({});
   qIndex = 0;
   qPick = null;
+  if (window.TF) window.TF.currentOrder = {};
+  if (window.TFPlatform && window.TFPlatform.TF && window.TFPlatform.TF.user) {
+    window.TFPlatform.tfApi("/api/attempts/reset-current", { method: "POST" }).catch(() => {});
+  }
 }
 
 function confirmWipeAnswers() {
@@ -1516,6 +1539,7 @@ function startDrill(n, src) {
   drill = { ids, i: 0, picks: {}, src: src, n: n };
   qIndex = 0;
   qPick = null;
+  if (window.TFPlatform) window.TFPlatform.tfSetOrigin("treino_rapido");
   renderQuestoes();
 }
 
@@ -1588,15 +1612,7 @@ function renderQuestoes() {
       <article class="q-card ${rev[q.id] ? "flagged" : ""}" id="q-atual">
         <p class="tag">Treino ${drill.i + 1}/${drill.ids.length} · ${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}${rev[q.id] ? " · para revisão" : ""}</p>
         <h3>${q.stem}</h3>
-        ${q.choices.map((c, i) => {
-          const letter = "ABCD"[i];
-          let cls = "q-opt";
-          if (rec) {
-            if (i === q.answer) cls += " ok";
-            else if (i === rec.choice) cls += " bad";
-          } else if (pick === i) cls += " sel";
-          return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}>${letter}) ${c}${rec && i === q.answer ? " <span class='q-mark'>correta</span>" : ""}${rec && i === rec.choice && !rec.ok ? " <span class='q-mark bad'>sua resposta</span>" : ""}</button>`;
-        }).join("")}
+        ${choiceButtonsHtml(q, rec, pick)}
         ${!rec ? `<div class="q-nav q-actions-main"><button type="button" class="btn primary" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
         ${rec ? feedbackHtml(q, rec) : ""}
         <div class="q-nav q-actions-sec">
@@ -1750,15 +1766,7 @@ function renderQuestoes() {
     <article class="q-card ${rev[q.id] ? "flagged" : ""}" id="q-atual">
       <p class="tag">${q.id} · ${q.disc} · ${q.topic}${q.sub ? " · " + q.sub : ""} · ${q.level || "média"} · ${q.art}${rev[q.id] ? " · para revisão" : ""}</p>
       <h3>${qIndex + 1}/${list.length}. ${q.stem}</h3>
-      ${q.choices.map((c, i) => {
-        const letter = "ABCD"[i];
-        let cls = "q-opt";
-        if (rec) {
-          if (i === q.answer) cls += " ok";
-          else if (i === rec.choice) cls += " bad";
-        } else if (pick === i) cls += " sel";
-        return `<button type="button" class="${cls}" data-choice="${i}" ${rec ? "disabled" : ""}><span class="q-letter">${letter}</span> ${c}${rec && i === q.answer ? " <span class='q-mark'>correta</span>" : ""}${rec && i === rec.choice && !rec.ok ? " <span class='q-mark bad'>sua resposta</span>" : ""}</button>`;
-      }).join("")}
+      ${choiceButtonsHtml(q, rec, pick, true)}
       ${!rec ? `<div class="q-nav q-actions-main"><button type="button" class="btn primary" id="q-confirm" ${pick == null ? "disabled" : ""}>Confirmar resposta</button></div>` : ""}
       ${rec ? feedbackHtml(q, rec) : ""}
       <div class="q-nav q-actions-sec">
@@ -1788,11 +1796,52 @@ function renderQuestoes() {
   if (nxt) nxt.addEventListener("click", () => { qIndex = (qIndex + 1) % list.length; qPick = null; renderQuestoes(); });
 }
 
+function presentedChoices(q, rec) {
+  if (rec && Array.isArray(rec.order) && rec.order.length) {
+    return rec.order.map((cid, i) => {
+      const idx = Number(String(cid).replace(/^c/, ""));
+      return { letter: "ABCD"[i], choiceId: cid, originalIndex: idx, text: q.choices[idx] };
+    });
+  }
+  if (window.TFPlatform && typeof window.TFPlatform.tfPresent === "function") {
+    return window.TFPlatform.tfPresent(q);
+  }
+  return (q.choices || []).map((text, i) => ({ letter: "ABCD"[i], choiceId: "c" + i, originalIndex: i, text }));
+}
+
+function choiceButtonsHtml(q, rec, pick, withLetterSpan) {
+  const presented = presentedChoices(q, rec);
+  const recOrig = rec && typeof rec.choice === "number" ? rec.choice : null;
+  const pickOrig = recOrig != null ? recOrig : (pick == null ? null : Number(pick));
+  return presented.map((p) => {
+    let cls = "q-opt";
+    if (rec) {
+      if (p.originalIndex === q.answer) cls += " ok";
+      else if (p.originalIndex === recOrig) cls += " bad";
+    } else if (pickOrig === p.originalIndex) cls += " sel";
+    const letter = withLetterSpan ? `<span class="q-letter">${p.letter}</span> ` : p.letter + ") ";
+    const markOk = rec && p.originalIndex === q.answer ? " <span class='q-mark'>correta</span>" : "";
+    const markBad = rec && p.originalIndex === recOrig && !rec.ok ? " <span class='q-mark bad'>sua resposta</span>" : "";
+    return `<button type="button" class="${cls}" data-choice="${p.originalIndex}" data-presented="${presented.indexOf(p)}" ${rec ? "disabled" : ""}>${letter}${p.text}${markOk}${markBad}</button>`;
+  }).join("");
+}
+
+function currentAttemptOrigin() {
+  if (wantDrill) return "treino_rapido";
+  if (window.TF && window.TF.origin) return window.TF.origin;
+  return "banco";
+}
+
 function feedbackHtml(q, rec) {
   const head = rec.ok ? "Certo." : "Errado.";
-  const alts = q.alts ? `<details class="adv-filters" style="margin-top:10px"><summary>Ver explicação das alternativas</summary><p class="explain">${q.choices.map((_, i) => "<b>" + "ABCD"[i] + "</b>: " + q.alts[i]).join("<br>")}</p></details>` : "";
+  const presented = rec && rec.order ? rec.order.map((cid, i) => {
+    const idx = Number(String(cid).replace(/^c/, ""));
+    return { letter: "ABCD"[i], originalIndex: idx };
+  }) : presentedChoices(q);
+  const gabLetter = (presented.find((p) => p.originalIndex === q.answer) || {}).letter || "ABCD"[q.answer];
+  const alts = q.alts ? `<details class="adv-filters" style="margin-top:10px"><summary>Ver explicação das alternativas</summary><p class="explain">${presentedChoices(q, rec).map((p) => "<b>" + p.letter + "</b>: " + (q.alts[p.originalIndex] || "")).join("<br>")}</p></details>` : "";
   const whyWrong = rec.ok ? "" : `<p class="tree-meta">Qual foi o motivo do seu erro?</p><div class="filters" id="err-why">${[["conteudo","Não conhecia o conteúdo"],["conceitos","Confundi conceitos"],["desatencao","Errei por desatenção"],["exceto","Não percebi o NÃO ou EXCETO"],["enunciado","Interpretei errado o enunciado"],["chute","Chutei"],["prazo","Esqueci um prazo ou artigo"]].map((x) => `<button type="button" class="chip ${rec.whyErr === x[0] ? "active" : ""}" data-err="${x[0]}">${x[1]}</button>`).join("")}</div>`;
-  return `<div class="q-feedback"><p class="explain"><b>${head}</b> Gabarito: ${"ABCD"[q.answer]}. ${q.why}</p><details class="adv-filters"><summary>Ver fundamento</summary><p class="explain"><b>Fundamento:</b> ${q.art}.</p></details>${alts}${whyWrong}</div>`;
+  return `<div class="q-feedback"><p class="explain"><b>${head}</b> Gabarito nesta apresentação: ${gabLetter}. ${q.why}</p><details class="adv-filters"><summary>Ver fundamento</summary><p class="explain"><b>Fundamento:</b> ${q.art}.</p></details>${alts}${whyWrong}</div>`;
 }
 
 function bindQuestionCard(box, q, rec) {
@@ -1803,16 +1852,23 @@ function bindQuestionCard(box, q, rec) {
   if (conf) {
     conf.addEventListener("click", () => {
       if (qPick == null) return;
+      const presented = presentedChoices(q, rec);
+      const presentedIndex = presented.findIndex((p) => p.originalIndex === qPick);
+      const origin = currentAttemptOrigin();
+      let rec = { choice: qPick, ok: qPick === q.answer, at: Date.now(), origin };
+      if (window.TFPlatform && typeof window.TFPlatform.tfRecordAttempt === "function") {
+        rec = Object.assign(rec, window.TFPlatform.tfRecordAttempt(q, presentedIndex < 0 ? 0 : presentedIndex, origin));
+      }
       if (wantDrill && drill) {
-        drill.picks[q.id] = { choice: qPick, ok: qPick === q.answer, at: Date.now() };
+        drill.picks[q.id] = rec;
         qPick = null;
         renderQuestoes();
         return;
       }
       const next = loadAnswers();
-      next[q.id] = { choice: qPick, ok: qPick === q.answer, at: Date.now() };
+      next[q.id] = rec;
       saveAnswers(next);
-      if (qPick !== q.answer && typeof addToCaderno === "function") addToCaderno(q);
+      if (!rec.ok && typeof addToCaderno === "function") addToCaderno(q, rec.choice);
       qPick = null;
       renderQuestoes();
       if (typeof renderCaderno === "function") renderCaderno();
@@ -2180,7 +2236,8 @@ function startSim(n) {
     if (home) home.insertAdjacentHTML("afterbegin", `<article class="card warn"><h3>Simulado incompleto</h3><p>Há ${paper.length} questões montadas, não 30. Banco PT ${byDisc("Português").length}, Leg ${byDisc("Legislação").length}, Esp ${byDisc("Específicas").length}.</p></article>`);
     return;
   }
-  simState = { n, paper, i: 0, choices: Array(30).fill(null), start: Date.now(), left: 3 * 60 * 60 };
+  if (window.TFPlatform) window.TFPlatform.tfSetOrigin("simulado");
+  simState = { n, paper, i: 0, choices: Array(paper.length).fill(null), start: Date.now(), left: 3 * 60 * 60 };
   document.getElementById("sim-home").hidden = true;
   document.getElementById("sim-run").hidden = false;
   if (simTimer) clearInterval(simTimer);
@@ -2221,7 +2278,7 @@ function renderSimRun() {
     <article class="q-card">
       <p class="tag">${q.topic} · ${q.art}</p>
       <h3>${simState.i + 1}/${total}. ${q.stem}</h3>
-      ${q.choices.map((c, i) => `<button class="q-opt ${ch === i ? "sel" : ""}" data-choice="${i}">${"ABCD"[i]}) ${c}</button>`).join("")}
+      ${presentedChoices(q).map((p) => `<button class="q-opt ${ch === p.originalIndex ? "sel" : ""}" data-choice="${p.originalIndex}">${p.letter}) ${p.text}</button>`).join("")}
       <div class="q-nav">
         <button class="btn" id="sim-prev">Anterior</button>
         <button class="btn" id="sim-next">Próxima</button>
@@ -2247,6 +2304,11 @@ function finishSim(auto) {
   paper.forEach((q, i) => {
     const ok = simState.choices[i] === q.answer;
     const w = custom ? 1 : weightOf(q.disc);
+    if (window.TFPlatform && typeof window.TFPlatform.tfRecordAttempt === "function" && simState.choices[i] != null) {
+      const presented = presentedChoices(q);
+      const pi = presented.findIndex((p) => p.originalIndex === simState.choices[i]);
+      window.TFPlatform.tfRecordAttempt(q, pi < 0 ? 0 : pi, "simulado");
+    }
     if (!ok) addToCaderno(q, simState.choices[i]);
     if (ok) okN += 1;
     byTopic[q.topic] = byTopic[q.topic] || { n: 0, ok: 0 };
@@ -2600,6 +2662,10 @@ function collectBackup() {
       if (v != null) blocks[k] = v;
     });
   });
+  const extra = {};
+  ["tango-fiscal-attempts", "tango-fiscal-shuffle", "tango-fiscal-qstate", "tango-fiscal-goals"].forEach((k) => {
+    extra[k] = lsGet(k);
+  });
   return {
     v: 1,
     when: new Date().toISOString(),
@@ -2612,7 +2678,11 @@ function collectBackup() {
     review: loadReview(),
     theme: currentTheme(),
     cards: typeof loadCards === "function" ? loadCards() : {},
-    qfilters: lsGet(qFilterSaveKey) || null
+    qfilters: lsGet(qFilterSaveKey) || null,
+    attempts: extra["tango-fiscal-attempts"],
+    shuffle: extra["tango-fiscal-shuffle"],
+    qstate: extra["tango-fiscal-qstate"],
+    goals: extra["tango-fiscal-goals"]
   };
 }
 
@@ -2635,6 +2705,10 @@ function applyBackup(data) {
   if (data.review) saveReview(data.review);
   if (data.cards && typeof saveCards === "function") saveCards(data.cards);
   if (data.qfilters && typeof data.qfilters === "string") lsSet(qFilterSaveKey, data.qfilters);
+  if (data.attempts) lsSet("tango-fiscal-attempts", typeof data.attempts === "string" ? data.attempts : JSON.stringify(data.attempts));
+  if (data.shuffle) lsSet("tango-fiscal-shuffle", typeof data.shuffle === "string" ? data.shuffle : JSON.stringify(data.shuffle));
+  if (data.qstate) lsSet("tango-fiscal-qstate", typeof data.qstate === "string" ? data.qstate : JSON.stringify(data.qstate));
+  if (data.goals) lsSet("tango-fiscal-goals", typeof data.goals === "string" ? data.goals : JSON.stringify(data.goals));
   if (data.theme === "dark" || data.theme === "light") applyTheme(data.theme, true);
   try { regradeStoredAnswers(); } catch (_) {}
   if (data.blocks) {

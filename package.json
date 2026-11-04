@@ -1,0 +1,15 @@
+{
+  "name": "estudar-fiscal-de-posturas",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Planner compartilhado para Fiscal de Posturas Tanguá/RJ (IBDO).",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "test": "node --test tests/logic.test.mjs tests/api.test.mjs"
+  },
+  "dependencies": {
+    "better-auth": "^1.7.16"
+  }
+}

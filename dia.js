@@ -567,13 +567,14 @@ function openDia(id) {
   renderDiaPage(id);
 }
 
-function openQuestoesFilter(disc, topics) {
+function openQuestoesFilter(disc, topics, dayId) {
   if (typeof qFilter !== "undefined") qFilter = disc || "all";
   if (typeof qTopic !== "undefined") qTopic = (topics && topics.length === 1) ? topics[0] : "all";
   if (typeof qSub !== "undefined") qSub = "all";
   if (typeof qIndex !== "undefined") qIndex = 0;
   if (typeof qPick !== "undefined") qPick = null;
   if (typeof qEdital !== "undefined") qEdital = null;
+  if (window.TFPlatform) window.TFPlatform.tfSetOrigin("cronograma", dayId || null);
   location.hash = "";
   openPanel("questoes");
   if (typeof renderQuestoes === "function") renderQuestoes();
@@ -857,6 +858,7 @@ function bindDiaNav(box, id) {
     const list = typeof bankList === "function" ? bankList() : BANK;
     qIndex = Math.max(0, list.findIndex((x) => x.id === qid));
     qPick = null;
+    if (window.TFPlatform) window.TFPlatform.tfSetOrigin("cronograma", id);
     location.hash = "";
     openPanel("questoes");
     if (typeof renderQuestoes === "function") renderQuestoes();
@@ -864,10 +866,11 @@ function bindDiaNav(box, id) {
   box.querySelectorAll("[data-qdisc]").forEach((b) => {
     b.addEventListener("click", () => {
       const topics = (b.dataset.qtopics || "").split("|").filter(Boolean);
-      openQuestoesFilter(b.dataset.qdisc, topics);
+      openQuestoesFilter(b.dataset.qdisc, topics, id);
     });
   });
   box.querySelectorAll("[data-go-q]").forEach((b) => b.addEventListener("click", () => {
+    if (window.TFPlatform) window.TFPlatform.tfSetOrigin("cronograma", id);
     location.hash = "";
     openPanel("questoes");
     if (typeof renderQuestoes === "function") renderQuestoes();

@@ -17,7 +17,7 @@
       document.documentElement.setAttribute("data-theme", t);
     } catch (e) {}
   </script>
-  <link rel="stylesheet" href="styles.css?v=20261103i" />
+  <link rel="stylesheet" href="styles.css?v=20261104a" />
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Ir ao conteúdo</a>
@@ -28,6 +28,7 @@
       <p class="sub">Código 101 · 2 vagas AC · ensino médio</p>
     </div>
     <div class="top-actions">
+      <div id="user-slot" class="user-slot"></div>
       <button type="button" class="theme-btn" id="btn-theme" aria-pressed="false" aria-label="Ativar modo escuro">
         <span class="theme-icon" aria-hidden="true"></span>
         <span class="theme-label">Modo escuro</span>
@@ -40,7 +41,7 @@
   </header>
 
   <div class="backup-bar">
-    <span>Progresso neste navegador. Ao trocar de aparelho, exporte e importe o backup.</span>
+    <span id="sync-ind" data-state="guest">Visitante: progresso só neste navegador. Backup JSON continua como emergência.</span>
     <div class="backup-actions">
       <button type="button" id="btn-export">Exportar backup</button>
       <label class="file-btn">Importar<input type="file" id="btn-import" accept="application/json" /></label>
@@ -58,6 +59,8 @@
       <button type="button" class="nav-btn" id="btn-mais" data-nav="mais" aria-expanded="false" aria-haspopup="true">Mais</button>
       <div class="nav-more-menu" id="mais-menu" hidden>
         <button type="button" data-go-panel="metodo">O que mudou</button>
+        <button type="button" data-go-panel="perfil">Meu perfil</button>
+        <button type="button" data-go-panel="ranking">Ranking</button>
       </div>
     </div>
   </nav>
@@ -91,6 +94,8 @@
     <button class="tab" data-panel="metodo" tabindex="-1">O que mudou</button>
     <button class="tab" data-panel="pesos" tabindex="-1">Estatísticas</button>
     <button class="tab" data-panel="prazos" tabindex="-1">Prazos Lei 946</button>
+    <button class="tab" data-panel="perfil" tabindex="-1">Perfil</button>
+    <button class="tab" data-panel="ranking" tabindex="-1">Ranking</button>
   </nav>
 
   <main id="conteudo">
@@ -512,6 +517,22 @@
         <p>Exoneração (a pedido ou de ofício) · Demissão · Readaptação · Aposentadoria · Falecimento · Posse em outro cargo inacumulável.</p>
       </article>
     </section>
+
+    <section id="perfil" class="panel">
+      <div class="section-head">
+        <h2>Meu perfil</h2>
+        <p>Conta, sequência e desempenho por origem. O ranking usa checklists; não comprova atenção real.</p>
+      </div>
+      <div id="perfil-box"></div>
+    </section>
+
+    <section id="ranking" class="panel">
+      <div class="section-head">
+        <h2>Ranking de estudos</h2>
+        <p>Grupos privados. Ordenação: sequência atual, recorde, dias concluídos. Sem percentual de acertos.</p>
+      </div>
+      <div id="ranking-box"></div>
+    </section>
   </main>
 
   <footer>
@@ -536,7 +557,9 @@
       </div>
     </div>
   </div>
-  <script src="app.js?v=20261103i"></script>
-  <script src="dia.js?v=20261103i"></script>
+  <div id="auth-gate" class="auth-gate" hidden></div>
+  <script src="app.js?v=20261104a"></script>
+  <script src="dia.js?v=20261104a"></script>
+  <script src="platform.js?v=20261104a"></script>
 </body>
 </html>
