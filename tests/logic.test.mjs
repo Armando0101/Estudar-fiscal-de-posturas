@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   fisherYates,
   choiceId,
@@ -138,6 +141,26 @@ test("gabarito real não muda com a ordem apresentada", () => {
   const order = ["c3", "c2", "c0", "c1"];
   assert.equal(correctPos(order, q.answer), 1);
   assert.equal(originalIndex(order[1]), q.answer);
+});
+
+test("public/ publica só o frontend, com caminhos relativos", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const pub = path.join(root, "public");
+  const files = fs.readdirSync(pub).sort();
+  assert.deepEqual(files, ["app.js", "dia.js", "index.html", "platform.js", "styles.css"]);
+  const html = fs.readFileSync(path.join(pub, "index.html"), "utf8");
+  assert.match(html, /href="styles\.css/);
+  assert.match(html, /src="app\.js/);
+  assert.match(html, /src="dia\.js/);
+  assert.match(html, /src="platform\.js/);
+  assert.equal(html.includes("src/"), false);
+  assert.equal(html.includes("migrations/"), false);
+  const wrangler = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
+  assert.match(wrangler, /directory = "\.\/public"/);
+  assert.match(wrangler, /run_worker_first = \["\/api\/\*"\]/);
+  const css = fs.readFileSync(path.join(pub, "styles.css"), "utf8");
+  assert.match(css, /\.nav-more-menu \{/);
+  assert.match(css, /z-index: 30;/);
 });
 
 test("ranking ordena por sequência, recorde e dias — nunca por acerto", () => {

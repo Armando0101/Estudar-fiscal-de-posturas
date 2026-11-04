@@ -58,33 +58,83 @@ Em `wrangler.toml`, ajuste:
 
 Cookies: `sameSite=lax`, `httpOnly`, `secure` em HTTPS.
 
-## 7. Publicar o Worker com os estáticos
+## 7. Pasta publicada (`public/`)
+
+O Worker **não** publica a raiz do repositório.
+
+`wrangler.toml` usa:
+
+```toml
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+```
+
+`public/` contém só o frontend:
+
+- `index.html`
+- `styles.css`
+- `app.js`
+- `dia.js`
+- `platform.js`
+
+Caminhos relativos (`styles.css`, `app.js`, `dia.js`, `platform.js`) continuam na mesma pasta do HTML. Não use `/src/` no navegador.
+
+Não entram no deploy estático:
+
+- `src/` e o Worker
+- `migrations/`
+- `tests/`
+- `data/` e `*.sqlite`
+- `wrangler.toml`, `.dev.vars`, `package.json`
+- `SETUP.md`, `AUDITORIA-IBDO-2019.md`, backups, `_audit_*.js`
+
+As rotas `/api/*` (incluindo `/api/auth` e `/api/login`) passam no Worker **antes** dos arquivos estáticos (`run_worker_first`).
+
+Cópias na raiz (`index.html`, `app.js`, etc.) existem só para o GitHub Pages atual. O Cloudflare lê **apenas** `public/`. Se alterar o HTML/CSS/JS, copie de novo:
+
+```bash
+cp -f index.html styles.css app.js dia.js platform.js public/
+```
+
+## 8. Publicar o Worker
+
+Antes do primeiro `wrangler deploy`, faça isto **você**:
+
+1. `wrangler login`
+2. `wrangler d1 create tango-fiscal` e cole o `database_id` em `wrangler.toml`
+3. `wrangler d1 execute tango-fiscal --file=migrations/0001_init.sql --remote`
+4. `wrangler secret put BETTER_AUTH_SECRET` (mínimo 32 caracteres aleatórios)
+5. Ajuste `[vars] BETTER_AUTH_URL` para a URL real do Worker (`https://tango-fiscal.<sua-conta>.workers.dev`)
+6. Confira se `public/` tem só os cinco arquivos do frontend
+7. Confira se `database_id` **não** está mais como `REPLACE_WITH_D1_DATABASE_ID`
 
 ```bash
 wrangler deploy
 ```
 
-`wrangler.toml` aponta `main = src/index.js` e `[assets] directory = "."`. As rotas `/api/*` passam no Worker antes dos arquivos estáticos.
+Não declare o site no ar até o comando terminar sem erro. Não misture GitHub Pages e Worker no mesmo endereço.
 
-Não declare o site no ar até o `wrangler deploy` terminar sem erro.
-
-## 8. Atualizar
+## 9. Atualizar
 
 ```bash
 git pull
+cp -f index.html styles.css app.js dia.js platform.js public/
 wrangler deploy
 ```
 
 Novas tabelas: acrescente `migrations/0002_....sql` e execute com `wrangler d1 execute`.
 
-## 9. Desenvolvimento local (sem Wrangler)
+## 10. Desenvolvimento local (sem Wrangler)
 
 ```bash
 npm install
 npm start
 ```
 
-Sobe `http://localhost:8787` com `node:sqlite` em `data/app.sqlite` e a mesma migração `0001_init.sql`.
+Sobe `http://localhost:8787` com `node:sqlite` em `data/app.sqlite`. Os estáticos saem de `public/`. A API continua em `/api/*`.
 
 Cópia de ambiente:
 
@@ -94,7 +144,7 @@ cp .dev.vars.example .dev.vars
 
 Não commite `.dev.vars`.
 
-## 10. Testes
+## 11. Testes
 
 ```bash
 npm test
@@ -102,7 +152,7 @@ npm test
 
 Roda `tests/logic.test.mjs` e `tests/api.test.mjs`.
 
-## 11. Migrar progresso antigo
+## 12. Migrar progresso antigo
 
 O localStorage de outro domínio (GitHub Pages vs Worker) não migra sozinho.
 
@@ -111,7 +161,7 @@ O localStorage de outro domínio (GitHub Pages vs Worker) não migra sozinho.
 3. A migração por conta ocorre uma vez (`migration_flags`). Não apaga caderno, simulados nem checklists.
 4. Não execute `localStorage.clear()`.
 
-## 12. Convidar amigos
+## 13. Convidar amigos
 
 1. Cada pessoa cria a própria conta (usuário + senha + apelido).
 2. Um membro cria um grupo em Ranking.
@@ -119,13 +169,13 @@ O localStorage de outro domínio (GitHub Pages vs Worker) não migra sozinho.
 4. O ranking lista apelido, sequência, recorde e dias concluídos. Sem percentual de acertos.
 5. Quem desmarcar “Aparecer no ranking” some da lista e não quebra o grupo.
 
-## 13. Recuperação de conta
+## 14. Recuperação de conta
 
 - E-mail opcional no cadastro/perfil.
 - Chave de recuperação gerada no cadastro, exibida uma vez (copiar/baixar).
 - Sem e-mail e sem chave, a perda da senha pode significar perda da conta.
 
-## 14. Backup do D1
+## 15. Backup do D1
 
 ```bash
 wrangler d1 export tango-fiscal --output=backup.sql --remote
@@ -133,10 +183,13 @@ wrangler d1 export tango-fiscal --output=backup.sql --remote
 
 Guarde o arquivo fora do repositório público.
 
-## 15. O que depende de você
+## 16. O que depende de você (antes do primeiro deploy)
 
 - Login na Cloudflare e `wrangler login`.
-- Criar o D1 e colar o `database_id`.
-- Definir `BETTER_AUTH_SECRET`.
+- Criar o D1 e colar o `database_id` (substituir `REPLACE_WITH_D1_DATABASE_ID`).
+- Rodar a migração `migrations/0001_init.sql` no D1 remoto.
+- Definir `BETTER_AUTH_SECRET` com `wrangler secret put`.
+- Colocar a URL pública em `BETTER_AUTH_URL`.
+- Conferir `public/` (só HTML/CSS/JS do site).
 - `wrangler deploy`.
 - Apontar os amigos para a URL do Worker, não para o computador local.

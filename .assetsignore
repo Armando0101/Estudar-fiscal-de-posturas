@@ -1,11 +1,21 @@
+# Segurança extra caso [assets] directory volte para a raiz.
+# O deploy usa public/; este arquivo não publica src, testes nem secrets.
 node_modules
 data
 .git
+src
+migrations
 tests
-_audit_*.js
-_ui_test.js
 *.sqlite
 .dev.vars
+wrangler.toml
 SETUP.md
 AUDITORIA-IBDO-2019.md
+README.md
+package.json
 package-lock.json
+server.mjs
+.gitignore
+.assetsignore
+_audit_*.js
+_ui_test.js

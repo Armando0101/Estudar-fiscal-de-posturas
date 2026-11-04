@@ -18,7 +18,7 @@ npm start
 
 Abre `http://localhost:8787`. Testes: `npm test`.
 
-Publicação na Cloudflare: veja `SETUP.md`. O GitHub Pages atual continua no ar até o Worker ser implantado por você. Esta cópia não publica sozinha.
+Publicação na Cloudflare: veja `SETUP.md`. O frontend publicado pelo Worker está em `public/` (HTML, CSS e JS). `src/`, testes, migrações e secrets não vão para a internet. O GitHub Pages atual continua no ar até o Worker ser implantado por você. Esta cópia não publica sozinha.
 
 ## Conta
 

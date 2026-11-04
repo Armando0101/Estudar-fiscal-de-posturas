@@ -7,6 +7,7 @@ import { createAuth } from "./src/auth.mjs";
 import { handleApi } from "./src/api.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(root, "public");
 const port = Number(process.env.PORT || 8787);
 const dataDir = path.join(root, "data");
 fs.mkdirSync(dataDir, { recursive: true });
@@ -41,8 +42,8 @@ const MIME = {
 function safeFile(urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0]);
   const rel = decoded === "/" ? "/index.html" : decoded;
-  const full = path.normalize(path.join(root, rel));
-  if (!full.startsWith(root)) return null;
+  const full = path.normalize(path.join(publicDir, rel));
+  if (!full.startsWith(publicDir + path.sep) && full !== publicDir) return null;
   if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) return null;
   return full;
 }
