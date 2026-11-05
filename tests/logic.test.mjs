@@ -179,9 +179,9 @@ test("bindQuestionCard não sombreia rec no confirm (evita TDZ)", () => {
   assert.match(fn, /next\[q\.id\] = resultRec/);
   assert.match(fn, /addToCaderno\(q, resultRec\.choice\)/);
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /app\.js\?v=20261104d/);
+  assert.match(html, /app\.js\?v=20261104e/);
   const pubHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
-  assert.match(pubHtml, /app\.js\?v=20261104d/);
+  assert.match(pubHtml, /app\.js\?v=20261104e/);
   const pubSrc = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   assert.equal(pubSrc.includes("let rec = { choice: qPick"), false);
   assert.equal(pubSrc.includes("let resultRec = { choice: qPick"), true);
@@ -325,5 +325,118 @@ test("platform.js não aplica GET /api/sync em conflito 409 sem merge", () => {
   assert.match(src, /TF\.applying/);
   assert.equal(/err\.status === 409[\s\S]{0,220}tfApply\(remote\.payload\)/.test(src), false);
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /platform\.js\?v=20261104d/);
+  assert.match(html, /platform\.js\?v=20261104e/);
+});
+
+function restoreCronogramaAfterSync({ remote, local, dirty, hash }) {
+  const TF = { dirty: new Set(dirty || []), applying: false, scheduled: 0 };
+  let store = {
+    daycheck: Object.assign({}, (local && local.daycheck) || {}),
+    done: Object.assign({}, (local && local.done) || {})
+  };
+  function apply(payload) {
+    TF.applying = true;
+    try {
+      if (payload && payload.daycheck) store.daycheck = payload.daycheck;
+      if (payload && payload.done) store.done = payload.done;
+      if (TF.applying) TF.scheduled += 0;
+    } finally {
+      TF.applying = false;
+    }
+  }
+  const views = { cal: 0, dia: null, today: 0 };
+  function refresh() {
+    views.cal += 1;
+    const m = String(hash || "").match(/^#dia-(\d{4}-\d{2}-\d{2})$/);
+    if (m) views.dia = m[1];
+    views.today += 1;
+  }
+  if (remote) {
+    if (TF.dirty.size) {
+      const merged = mergePreferLocal(remote, { daycheck: store.daycheck, done: store.done }, TF.dirty);
+      apply(merged);
+      TF.scheduled += 1;
+    } else {
+      apply(remote);
+    }
+  }
+  refresh();
+  return { store, views, applying: TF.applying, scheduled: TF.scheduled };
+}
+
+test("GET /api/sync aplica daycheck e redesenha o calendário", () => {
+  const remote = {
+    v: 1,
+    daycheck: { "2026-11-04": { "st-s1": true, "st-s2": true } },
+    done: { "2026-11-04": false }
+  };
+  const out = restoreCronogramaAfterSync({ remote, local: { daycheck: {}, done: {} }, hash: "" });
+  assert.equal(out.store.daycheck["2026-11-04"]["st-s1"], true);
+  assert.equal(out.store.daycheck["2026-11-04"]["st-s2"], true);
+  assert.equal(out.views.cal, 1);
+  assert.equal(out.views.today, 1);
+  assert.equal(out.views.dia, null);
+  assert.equal(out.applying, false);
+  assert.equal(out.scheduled, 0);
+});
+
+test("hash #dia-2026-11-04 redesenha o dia com as marcações restauradas", () => {
+  const remote = {
+    v: 1,
+    daycheck: { "2026-11-04": { "st-s1": true, "st-s3": true } }
+  };
+  const out = restoreCronogramaAfterSync({ remote, local: {}, hash: "#dia-2026-11-04" });
+  assert.equal(out.views.dia, "2026-11-04");
+  assert.equal(out.store.daycheck["2026-11-04"]["st-s3"], true);
+  assert.equal(out.views.cal, 1);
+});
+
+test("restauração visual não agenda sync; cliques locais mais novos vencem", () => {
+  const remote = {
+    v: 1,
+    daycheck: { "2026-11-04": { "st-s1": true, "st-s2": false } }
+  };
+  const local = {
+    daycheck: { "2026-11-04": { "st-s1": true, "st-s2": true, "st-s3": true } }
+  };
+  const out = restoreCronogramaAfterSync({
+    remote,
+    local,
+    dirty: ["daycheck"],
+    hash: "#dia-2026-11-04"
+  });
+  assert.equal(out.store.daycheck["2026-11-04"]["st-s2"], true);
+  assert.equal(out.store.daycheck["2026-11-04"]["st-s3"], true);
+  assert.equal(out.views.dia, "2026-11-04");
+  assert.equal(out.applying, false);
+});
+
+test("init sem sessão não aplica payload remoto", () => {
+  const out = restoreCronogramaAfterSync({ remote: null, local: { daycheck: {} }, hash: "" });
+  assert.deepEqual(out.store.daycheck, {});
+  assert.equal(out.scheduled, 0);
+  assert.equal(out.views.cal, 1);
+});
+
+test("tfRefreshCronograma existe e o boot chama tfRefreshViewsAfterSync", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const dia = fs.readFileSync(path.join(root, "dia.js"), "utf8");
+  const plat = fs.readFileSync(path.join(root, "platform.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  assert.match(dia, /function tfRefreshCronograma\(/);
+  assert.match(dia, /window\.tfRefreshCronograma = tfRefreshCronograma/);
+  assert.match(dia, /renderCal\(/);
+  assert.match(dia, /renderDiaPage\(m\[1\]\)/);
+  assert.match(plat, /function tfRefreshViewsAfterSync\(/);
+  assert.match(plat, /tfRefreshViewsAfterSync\(\)/);
+  const boot = plat.slice(plat.indexOf("document.addEventListener(\"DOMContentLoaded\""));
+  assert.match(boot, /tfApply\(/);
+  assert.match(boot, /tfRefreshViewsAfterSync\(\)/);
+  const after = plat.slice(plat.indexOf("async function tfAfterLogin"), plat.indexOf("function tfHasLegacy"));
+  assert.match(after, /tfRefreshViewsAfterSync\(\)/);
+  assert.match(app, /btn\.dataset\.panel === "calendario"/);
+  const pubDia = fs.readFileSync(path.join(root, "public", "dia.js"), "utf8");
+  const pubPlat = fs.readFileSync(path.join(root, "public", "platform.js"), "utf8");
+  assert.match(pubDia, /function tfRefreshCronograma\(/);
+  assert.match(pubPlat, /tfRefreshViewsAfterSync\(\)/);
 });
