@@ -456,6 +456,13 @@ document.querySelectorAll(".tab").forEach((btn) => {
     syncNav(btn.dataset.panel);
     try {
       if (btn.dataset.panel === "hoje" && typeof renderToday === "function") renderToday();
+      if (btn.dataset.panel === "calendario" && typeof renderCal === "function") {
+        renderCal(typeof currentCalFilter === "function" ? currentCalFilter() : "all");
+      }
+      if (btn.dataset.panel === "dia") {
+        const m = (location.hash || "").match(/^#dia-(\d{4}-\d{2}-\d{2})$/);
+        if (m && typeof renderDiaPage === "function") renderDiaPage(m[1]);
+      }
       if (btn.dataset.panel === "questoes" && typeof renderQuestoes === "function") renderQuestoes();
       if (btn.dataset.panel === "flashcards" && typeof renderFlashcards === "function") renderFlashcards();
       if (btn.dataset.panel === "simulados" && typeof renderSimHome === "function") renderSimHome();

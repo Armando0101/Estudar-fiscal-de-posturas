@@ -1058,6 +1058,17 @@ function routeHash() {
   return false;
 }
 
+function tfRefreshCronograma() {
+  if (typeof renderCal === "function") {
+    renderCal(typeof currentCalFilter === "function" ? currentCalFilter() : "all");
+  }
+  const m = (typeof location !== "undefined" && location.hash || "").match(/^#dia-(\d{4}-\d{2}-\d{2})$/);
+  if (m && typeof renderDiaPage === "function") renderDiaPage(m[1]);
+  if (typeof renderToday === "function") renderToday();
+}
+
+window.tfRefreshCronograma = tfRefreshCronograma;
+
 window.addEventListener("hashchange", () => {
   if (!routeHash() && document.getElementById("dia") && document.getElementById("dia").classList.contains("active")) {
     openPanel("calendario");

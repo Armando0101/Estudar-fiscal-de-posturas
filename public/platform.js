@@ -194,6 +194,23 @@ function tfApply(data) {
   }
 }
 
+function tfRefreshViewsAfterSync() {
+  if (typeof window.tfRefreshCronograma === "function") window.tfRefreshCronograma();
+  else {
+    if (typeof renderCal === "function") {
+      renderCal(typeof currentCalFilter === "function" ? currentCalFilter() : "all");
+    }
+    const m = (typeof location !== "undefined" && location.hash || "").match(/^#dia-(\d{4}-\d{2}-\d{2})$/);
+    if (m && typeof renderDiaPage === "function") renderDiaPage(m[1]);
+    if (typeof renderToday === "function") renderToday();
+  }
+  if (typeof renderQuestoes === "function") renderQuestoes();
+  if (typeof renderCaderno === "function") renderCaderno();
+  if (typeof renderEdital === "function") renderEdital();
+  if (typeof renderStatsLive === "function") renderStatsLive();
+  if (typeof renderPerfil === "function") renderPerfil();
+}
+
 async function tfApi(path, opts) {
   const o = opts || {};
   const res = await fetch(path, {
@@ -565,9 +582,7 @@ async function tfAfterLogin() {
     tfSetSync("fail", "Falha de sincronização: tentando novamente.");
   }
   tfPaintChrome();
-  if (typeof renderToday === "function") renderToday();
-  if (typeof renderQuestoes === "function") renderQuestoes();
-  if (typeof renderPerfil === "function") renderPerfil();
+  tfRefreshViewsAfterSync();
   tfSetSync("ok", "Salvo na nuvem.");
 }
 
@@ -824,6 +839,7 @@ window.tfMergePreferLocal = tfMergePreferLocal;
 window.TFPlatform = {
   TF, tfApi, tfOrderFor, tfPresent, tfRecordAttempt, tfOriginStats,
   tfScheduleSync, tfFlushSync, tfSetSync, tfMarkDirty, tfMergePreferLocal,
+  tfRefreshViewsAfterSync,
   renderPerfil, renderRanking, tfShowGate, tfSetOrigin: function (o, dayId) {
     TF.origin = o || "banco";
     TF.dayId = dayId || null;
@@ -852,6 +868,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           tfApply(remote.payload);
         }
       } else tfOfferMigration(remote.migrated);
+      tfRefreshViewsAfterSync();
       tfSetSync("ok", "Salvo na nuvem.");
     } else {
       tfPaintChrome();
