@@ -179,9 +179,9 @@ test("bindQuestionCard não sombreia rec no confirm (evita TDZ)", () => {
   assert.match(fn, /next\[q\.id\] = resultRec/);
   assert.match(fn, /addToCaderno\(q, resultRec\.choice\)/);
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /app\.js\?v=20261104e/);
+  assert.match(html, /app\.js\?v=20261106a/);
   const pubHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
-  assert.match(pubHtml, /app\.js\?v=20261104e/);
+  assert.match(pubHtml, /app\.js\?v=20261106a/);
   const pubSrc = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   assert.equal(pubSrc.includes("let rec = { choice: qPick"), false);
   assert.equal(pubSrc.includes("let resultRec = { choice: qPick"), true);
